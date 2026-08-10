@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1786355893139,
+      "tag": "0000_amusing_vargas",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1786357566823,
+      "tag": "0001_flashy_rage",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786358672430,
+      "tag": "0002_puzzling_sersi",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786377628218,
+      "tag": "0003_wonderful_havok",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786382021530,
+      "tag": "0004_daffy_trauma",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786382870599,
+      "tag": "0005_inherit-cancellation-policies",
+      "breakpoints": true
+    }
+  ]
+}

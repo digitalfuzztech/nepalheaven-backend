@@ -1,0 +1,1 @@
+ALTER TABLE "packages" ADD COLUMN "destination_label" text;
