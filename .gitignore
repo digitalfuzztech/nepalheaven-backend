@@ -32,6 +32,9 @@ dist-ssr
 *.sln
 *.sw?
 
+# Environment / secrets
 .env
-.env.example
-.env.postgres.backup
+.env.*
+
+# Private uploads
+.private/
