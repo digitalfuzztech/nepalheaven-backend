@@ -23,6 +23,8 @@ import {
   getMyCancellationPreviewFn,
   uploadMyBookingIdentityDocumentFn,
 } from "@/lib/booking.functions";
+import { countryName } from "@/lib/countries";
+import { downloadMyVerifiedBookingIdentityDocumentFn } from "@/lib/identity-documents.functions";
 
 export const Route = createFileRoute("/account_/bookings/$reference")({
   loader: async ({ params }) => {
@@ -45,6 +47,7 @@ function BookingDetailPage() {
   );
   const [document, setDocument] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [actionError, setActionError] = useState("");
   const [preview, setPreview] = useState<
     | Extract<
@@ -85,6 +88,13 @@ function BookingDetailPage() {
       </section>
     );
   const booking = result.booking;
+  const refundTransaction = [...booking.paymentHistory]
+    .reverse()
+    .find(
+      (payment) =>
+        payment.purpose === "refund" &&
+        (payment.status === "refunded" || payment.status === "paid"),
+    );
 
   async function upload(event: FormEvent) {
     event.preventDefault();
@@ -110,6 +120,35 @@ function BookingDetailPage() {
     });
     if (!response.ok) setActionError(response.message);
     else setPreview(response.preview);
+  }
+  async function viewDocument() {
+    if (!booking.identityDocument) return;
+    setDownloading(true);
+    setActionError("");
+    try {
+      const response = await downloadMyVerifiedBookingIdentityDocumentFn({
+        data: { documentId: booking.identityDocument.id },
+      });
+      if (!response.ok)
+        return setActionError("This verified document is unavailable.");
+      const binary = atob(response.document.base64);
+      const bytes = Uint8Array.from(binary, (character) =>
+        character.charCodeAt(0),
+      );
+      const url = URL.createObjectURL(
+        new Blob([bytes], { type: response.document.mimeType }),
+      );
+      const opened = window.open(url, "_blank", "noopener,noreferrer");
+      if (!opened) {
+        const anchor = window.document.createElement("a");
+        anchor.href = url;
+        anchor.download = response.document.filename;
+        anchor.click();
+      }
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } finally {
+      setDownloading(false);
+    }
   }
   async function confirmCancellation() {
     setCancelling(true);
@@ -184,6 +223,13 @@ function BookingDetailPage() {
                 {booking.packageDays} days ·{" "}
                 {booking.packageDifficulty || "Difficulty not specified"}
               </p>
+              <Link
+                to="/packages/$slug"
+                params={{ slug: booking.packageSlug }}
+                className="mt-5 inline-flex rounded-full border border-border px-5 py-2.5 text-sm font-bold hover:border-gold hover:text-gold"
+              >
+                View Package
+              </Link>
             </div>
           </div>
         </div>
@@ -197,33 +243,26 @@ function BookingDetailPage() {
         ) : null}
         <div className="mt-8 grid gap-8 lg:grid-cols-2">
           <Card title="Primary customer / traveller" icon={UserRound}>
-            {booking.primaryTraveller ? (
+            {booking.customerProfile ? (
               <dl className="grid gap-4 sm:grid-cols-2">
-                <Detail
-                  label="Name"
-                  value={`${booking.primaryTraveller.firstName} ${booking.primaryTraveller.lastName}`.trim()}
-                />
-                <Detail
-                  label="Email"
-                  value={booking.primaryTraveller.email || "Not provided"}
-                />
+                <Detail label="Name" value={booking.customerProfile.name} />
+                <Detail label="Email" value={booking.customerProfile.email} />
                 <Detail
                   label="Contact number"
-                  value={booking.primaryTraveller.phone || "Not provided"}
+                  value={booking.customerProfile.phone || "Not provided"}
                 />
                 <Detail
                   label="Nationality"
-                  value={booking.primaryTraveller.nationality || "Not provided"}
+                  value={
+                    countryName(booking.customerProfile.nationality) ||
+                    "Not provided"
+                  }
                 />
                 <Detail
                   label="Date of birth"
                   value={
-                    booking.primaryTraveller.dateOfBirth
-                      ? date(
-                          new Date(booking.primaryTraveller.dateOfBirth)
-                            .toISOString()
-                            .slice(0, 10),
-                        )
+                    booking.customerProfile.dateOfBirth
+                      ? date(booking.customerProfile.dateOfBirth)
                       : "Not provided"
                   }
                 />
@@ -290,15 +329,37 @@ function BookingDetailPage() {
               {booking.status === "cancelled" ? (
                 <>
                   <Detail
-                    label="Refunded"
+                    label="Refund amount"
                     value={money(booking.refundAmount, booking.currency)}
                     row
                   />
+                  {booking.refundedAmount > 0 ? (
+                    <Detail
+                      label="Refunded amount"
+                      value={money(booking.refundedAmount, booking.currency)}
+                      row
+                    />
+                  ) : null}
                   <Detail
                     label="Remaining amount"
                     value="Not due — booking cancelled"
                     row
                   />
+                  <Detail
+                    label="Refund status"
+                    value={refundLabel(booking.refundStatus)}
+                    row
+                  />
+                  {refundTransaction ? (
+                    <Detail
+                      label="Refund date"
+                      value={dateTime(
+                        refundTransaction.paidAt ||
+                          refundTransaction.createdDate,
+                      )}
+                      row
+                    />
+                  ) : null}
                 </>
               ) : (
                 <>
@@ -318,11 +379,19 @@ function BookingDetailPage() {
                   />
                 </>
               )}
-              <Detail
-                label="Payment status"
-                value={title(booking.paymentStatus)}
-                row
-              />
+              {booking.status !== "cancelled" ? (
+                <Detail
+                  label="Payment status"
+                  value={title(booking.paymentStatus)}
+                  row
+                />
+              ) : null}
+              {booking.refundStatus === "processed_for_refund" ? (
+                <p className="rounded-2xl bg-accent p-4 text-xs leading-relaxed text-muted-foreground">
+                  Your cancellation has been processed and the eligible refund
+                  is awaiting refund processing.
+                </p>
+              ) : null}
             </dl>
           </Card>
           <Card title="Payment / refund history" icon={Clock3}>
@@ -375,11 +444,66 @@ function BookingDetailPage() {
                 />
                 <Detail
                   label="Verification"
-                  value={title(booking.identityDocument.verificationStatus)}
+                  value={documentStatusLabel(
+                    booking.identityDocument.verificationStatus,
+                  )}
                 />
-                <p className="text-xs text-muted-foreground">
-                  The private document itself is not publicly displayed.
-                </p>
+                {booking.identityDocument.verificationStatus === "verified" ? (
+                  <button
+                    type="button"
+                    disabled={downloading}
+                    onClick={() => void viewDocument()}
+                    className="mt-2 rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground disabled:opacity-60"
+                  >
+                    {downloading ? "Opening..." : "View Document"}
+                  </button>
+                ) : booking.identityDocument.verificationStatus ===
+                  "rejected" ? (
+                  <form
+                    onSubmit={upload}
+                    className="mt-4 border-t border-border pt-4"
+                  >
+                    <p className="mb-3 text-xs text-muted-foreground">
+                      This document was rejected. Upload a replacement for a new
+                      review.
+                    </p>
+                    <div className="grid gap-3">
+                      <select
+                        value={documentType}
+                        onChange={(event) =>
+                          setDocumentType(
+                            event.target.value as "passport" | "national_id",
+                          )
+                        }
+                        className="h-11 rounded-xl border border-border bg-background px-3 text-sm"
+                      >
+                        <option value="passport">Passport</option>
+                        <option value="national_id">
+                          National ID / Government ID
+                        </option>
+                      </select>
+                      <input
+                        required
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                        onChange={(event) =>
+                          setDocument(event.target.files?.[0] ?? null)
+                        }
+                        className="text-sm"
+                      />
+                      <button
+                        disabled={uploading}
+                        className="rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground disabled:opacity-60"
+                      >
+                        {uploading ? "Uploading..." : "Upload Replacement"}
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Your document will become viewable here after verification.
+                  </p>
+                )}
               </div>
             ) : (
               <form onSubmit={upload}>
@@ -441,9 +565,19 @@ function BookingDetailPage() {
                   value={money(booking.cancellationFeeAmount, booking.currency)}
                 />
                 <Detail
-                  label="Refund"
+                  label="Refund amount"
                   value={money(booking.refundAmount, booking.currency)}
                 />
+                <Detail
+                  label="Refund status"
+                  value={refundLabel(booking.refundStatus)}
+                />
+                {booking.refundedAmount > 0 ? (
+                  <Detail
+                    label="Refunded amount"
+                    value={money(booking.refundedAmount, booking.currency)}
+                  />
+                ) : null}
                 <Detail
                   label="Reason"
                   value={booking.cancellationReason || "No reason supplied"}
@@ -618,4 +752,28 @@ function title(value: string) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function refundLabel(
+  status:
+    | "none"
+    | "processed_for_refund"
+    | "partially_refunded"
+    | "refunded"
+    | "refund_failed"
+    | "no_refund_due",
+) {
+  return {
+    none: "None",
+    processed_for_refund: "Processed for Refund",
+    partially_refunded: "Partially Refunded",
+    refunded: "Refunded",
+    refund_failed: "Refund Failed",
+    no_refund_due: "No Refund Due",
+  }[status];
+}
+
+function documentStatusLabel(status: "pending" | "verified" | "rejected") {
+  if (status === "pending") return "Pending Verification";
+  return status === "verified" ? "Verified" : "Rejected";
 }

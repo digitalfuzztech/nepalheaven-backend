@@ -9,18 +9,25 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "@/lib/auth";
 import { getMyBookingsFn } from "@/lib/booking.functions";
 import { getPackagesFn } from "@/lib/content.functions";
+import { countryName } from "@/lib/countries";
+import {
+  getMyProfilePhotoFn,
+  removeMyProfilePhotoFn,
+  uploadMyProfilePhotoFn,
+} from "@/lib/profile.functions";
 
 export const Route = createFileRoute("/account")({
   loader: async () => {
-    const [packages, bookingResult] = await Promise.all([
+    const [packages, bookingResult, photoResult] = await Promise.all([
       getPackagesFn(),
       getMyBookingsFn(),
+      getMyProfilePhotoFn(),
     ]);
-    return { packages, bookingResult };
+    return { packages, bookingResult, photoResult };
   },
   component: AccountPage,
 });
@@ -31,10 +38,12 @@ type Booking = Extract<
 >["bookings"][number];
 
 function AccountPage() {
-  const { packages, bookingResult } = Route.useLoaderData();
+  const { packages, bookingResult, photoResult } = Route.useLoaderData();
   const { user, ready, logout } = useAuth();
   const navigate = useNavigate();
   const [saved, setSaved] = useState<string[]>([]);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState("");
 
   useEffect(() => {
     if (ready && (!user || user.role !== "customer"))
@@ -45,13 +54,48 @@ function AccountPage() {
           window.localStorage.getItem("nepalheaven_saved_v1") || "[]",
         ) as string[],
       );
-    } catch {}
+    } catch {
+      setSaved([]);
+    }
   }, [ready, user, navigate]);
 
   if (!ready || !user || user.role !== "customer")
     return <div className="min-h-[70vh]" />;
 
   const savedPackages = packages.filter((pkg) => saved.includes(pkg.slug));
+  const profilePhoto = photoResult.ok ? photoResult.photo.dataUrl : null;
+  const nationality = countryName(user.nationality) || "Not added";
+
+  async function uploadPhoto(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const input = form.elements.namedItem("photo") as HTMLInputElement | null;
+    const file = input?.files?.[0];
+    if (!file) return setPhotoError("Choose a JPEG, PNG or WEBP photo.");
+    const data = new FormData();
+    data.set("photo", file);
+    setPhotoBusy(true);
+    setPhotoError("");
+    try {
+      const result = await uploadMyProfilePhotoFn({ data });
+      if (!result.ok) return setPhotoError(result.message);
+      window.location.reload();
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+
+  async function removePhoto() {
+    setPhotoBusy(true);
+    setPhotoError("");
+    try {
+      const result = await removeMyProfilePhotoFn();
+      if (!result.ok) return setPhotoError(result.message);
+      window.location.reload();
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
   const customerBookings = bookingResult.ok ? bookingResult.bookings : [];
   const today = new Date().toISOString().slice(0, 10);
   const cancelled = customerBookings.filter(
@@ -75,7 +119,11 @@ function AccountPage() {
     value: string;
     icon: LucideIcon;
   }> = [
-    { label: "Upcoming trips", value: String(upcoming.length), icon: CalendarDays },
+    {
+      label: "Upcoming trips",
+      value: String(upcoming.length),
+      icon: CalendarDays,
+    },
     { label: "Saved trips", value: String(savedPackages.length), icon: Heart },
     { label: "Account status", value: "Active", icon: ShieldCheck },
   ];
@@ -85,9 +133,17 @@ function AccountPage() {
       <div className="grid gap-8 lg:grid-cols-[15rem_1fr]">
         <aside className="h-fit rounded-3xl border border-border bg-card p-3">
           <div className="rounded-2xl bg-primary p-5 text-primary-foreground">
-            <div className="grid h-12 w-12 place-items-center rounded-full bg-white/10">
-              <UserRound />
-            </div>
+            {profilePhoto ? (
+              <img
+                src={profilePhoto}
+                alt={`${user.name}'s profile`}
+                className="h-12 w-12 rounded-full object-cover"
+              />
+            ) : (
+              <div className="grid h-12 w-12 place-items-center rounded-full bg-white/10 text-sm font-bold">
+                {initials(user.name)}
+              </div>
+            )}
             <p className="mt-4 text-sm font-semibold">{user.name}</p>
             <p className="mt-1 break-all text-xs text-primary-foreground/60">
               {user.email}
@@ -140,8 +196,8 @@ function AccountPage() {
               Welcome, {user.name.split(" ")[0]}.
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-relaxed text-primary-foreground/70">
-              Review your bookings, explore journeys and keep your favourite trips
-              close at hand.
+              Review your bookings, explore journeys and keep your favourite
+              trips close at hand.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               <Link
@@ -200,10 +256,12 @@ function AccountPage() {
               </div>
             ) : customerBookings.length === 0 ? (
               <div className="mt-6 rounded-2xl bg-accent p-6">
-                <p className="font-semibold">You don't have any bookings yet.</p>
+                <p className="font-semibold">
+                  You don't have any bookings yet.
+                </p>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Explore Nepal Heaven journeys when you're ready to plan your next
-                  adventure.
+                  Explore Nepal Heaven journeys when you're ready to plan your
+                  next adventure.
                 </p>
                 <Link
                   to="/packages"
@@ -221,7 +279,10 @@ function AccountPage() {
             )}
           </section>
 
-          <div id="saved" className="rounded-3xl border border-border bg-card p-7">
+          <div
+            id="saved"
+            className="rounded-3xl border border-border bg-card p-7"
+          >
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="eyebrow text-gold">Your favourites</p>
@@ -261,22 +322,75 @@ function AccountPage() {
               </div>
             ) : (
               <div className="mt-6 rounded-2xl bg-accent p-6 text-sm text-muted-foreground">
-                You haven't saved any trips yet. Tap the heart on a package to keep
-                it here.
+                You haven't saved any trips yet. Tap the heart on a package to
+                keep it here.
               </div>
             )}
           </div>
 
-          <div id="profile" className="rounded-3xl border border-border bg-card p-7">
+          <div
+            id="profile"
+            className="rounded-3xl border border-border bg-card p-7"
+          >
             <p className="eyebrow text-gold">Your details</p>
             <h2 className="mt-2 text-2xl">Profile</h2>
-            <div className="mt-6 grid gap-5 sm:grid-cols-2">
-              <Info label="Full name" value={user.name} />
-              <Info label="Email" value={user.email} />
-              <Info label="Phone" value={user.phone || "Not added"} />
-              <Info label="Country" value={user.country || "Not added"} />
-              <Info label="Nationality" value={user.nationality || "Not added"} />
-              <Info label="Date of birth" value={user.dateOfBirth || "Not added"} />
+            <div className="mt-6 grid gap-6 lg:grid-cols-[13rem_1fr]">
+              <div className="rounded-2xl bg-accent p-5 text-center">
+                {profilePhoto ? (
+                  <img
+                    src={profilePhoto}
+                    alt={`${user.name}'s profile`}
+                    className="mx-auto h-28 w-28 rounded-full object-cover"
+                  />
+                ) : (
+                  <div className="mx-auto grid h-28 w-28 place-items-center rounded-full bg-card text-2xl font-bold text-primary">
+                    {initials(user.name)}
+                  </div>
+                )}
+                <form onSubmit={uploadPhoto} className="mt-4">
+                  <label className="inline-flex cursor-pointer rounded-full bg-primary px-4 py-2 text-xs font-bold text-primary-foreground">
+                    {profilePhoto ? "Upload New Photo" : "Upload Photo"}
+                    <input
+                      name="photo"
+                      type="file"
+                      accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                      className="sr-only"
+                      onChange={(event) =>
+                        event.currentTarget.form?.requestSubmit()
+                      }
+                      disabled={photoBusy}
+                    />
+                  </label>
+                </form>
+                {profilePhoto ? (
+                  <button
+                    type="button"
+                    disabled={photoBusy}
+                    onClick={() => void removePhoto()}
+                    className="mt-3 text-xs font-semibold text-destructive disabled:opacity-60"
+                  >
+                    Remove photo
+                  </button>
+                ) : null}
+                <p className="mt-3 text-xs text-muted-foreground">
+                  JPEG, PNG or WEBP · maximum 5 MB
+                </p>
+                {photoError ? (
+                  <p role="alert" className="mt-2 text-xs text-destructive">
+                    {photoError}
+                  </p>
+                ) : null}
+              </div>
+              <div className="grid gap-5 sm:grid-cols-2">
+                <Info label="Full name" value={user.name} />
+                <Info label="Email" value={user.email} />
+                <Info label="Phone" value={user.phone || "Not added"} />
+                <Info label="Nationality" value={nationality} />
+                <Info
+                  label="Date of birth"
+                  value={user.dateOfBirth || "Not added"}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -285,7 +399,24 @@ function AccountPage() {
   );
 }
 
-function BookingGroup({ title, bookings }: { title: string; bookings: Booking[] }) {
+function initials(name: string) {
+  return (
+    name
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((part) => part.charAt(0).toUpperCase())
+      .join("") || "NH"
+  );
+}
+
+function BookingGroup({
+  title,
+  bookings,
+}: {
+  title: string;
+  bookings: Booking[];
+}) {
   if (!bookings.length) return null;
   return (
     <div>
@@ -324,7 +455,8 @@ function BookingGroup({ title, bookings }: { title: string; bookings: Booking[] 
                 </span>
                 <span>
                   <Users className="mr-1.5 inline h-4 w-4 text-gold" />
-                  {booking.travellers} {booking.travellers === 1 ? "traveller" : "travellers"}
+                  {booking.travellers}{" "}
+                  {booking.travellers === 1 ? "traveller" : "travellers"}
                 </span>
                 <span>{booking.tierName || "Standard"}</span>
               </div>
@@ -334,10 +466,31 @@ function BookingGroup({ title, bookings }: { title: string; bookings: Booking[] 
                 {formatMoney(booking.total, booking.currency)}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {paymentLabel(booking.paymentStatus)}
+                {booking.status === "cancelled"
+                  ? refundLabel(booking.refundStatus)
+                  : paymentLabel(booking.paymentStatus)}
               </p>
-              {booking.status === "cancelled" ? <p className="mt-1 text-xs text-muted-foreground">Paid {formatMoney(booking.amountPaid, booking.currency)} · Fee {formatMoney(booking.cancellationFeeAmount, booking.currency)} · Refunded {formatMoney(booking.refundAmount, booking.currency)}</p> : <p className="mt-1 text-xs text-muted-foreground">Paid {formatMoney(booking.amountPaid, booking.currency)} · Remaining {formatMoney(booking.remainingBalance, booking.currency)}</p>}
-              {booking.cancelledDate ? <p className="mt-1 text-xs text-muted-foreground">Cancelled {formatDate(booking.cancelledDate.slice(0, 10))}</p> : null}
+              {booking.status === "cancelled" ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Paid {formatMoney(booking.amountPaid, booking.currency)} · Fee{" "}
+                  {formatMoney(booking.cancellationFeeAmount, booking.currency)}{" "}
+                  ·{" "}
+                  {booking.refundedAmount > 0
+                    ? `Refunded ${formatMoney(booking.refundedAmount, booking.currency)}`
+                    : `Refund amount ${formatMoney(booking.refundAmount, booking.currency)}`}
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Paid {formatMoney(booking.amountPaid, booking.currency)} ·
+                  Remaining{" "}
+                  {formatMoney(booking.remainingBalance, booking.currency)}
+                </p>
+              )}
+              {booking.cancelledDate ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Cancelled {formatDate(booking.cancelledDate.slice(0, 10))}
+                </p>
+              ) : null}
               <Link
                 to="/account/bookings/$reference"
                 params={{ reference: booking.reference }}
@@ -395,4 +548,15 @@ function paymentLabel(status: Booking["paymentStatus"]) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function refundLabel(status: Booking["refundStatus"]) {
+  return {
+    none: "None",
+    processed_for_refund: "Processed for Refund",
+    partially_refunded: "Partially Refunded",
+    refunded: "Refunded",
+    refund_failed: "Refund Failed",
+    no_refund_due: "No Refund Due",
+  }[status];
 }

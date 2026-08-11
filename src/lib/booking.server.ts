@@ -136,6 +136,32 @@ export async function requireAuthenticatedCustomer(transaction: Transaction) {
   return row.userId;
 }
 
+async function requireAuthenticatedAdmin(transaction: Transaction) {
+  const token = readSessionToken();
+  if (!token)
+    throw new PublicBookingError(
+      "AUTH_REQUIRED",
+      "Administrator access required.",
+    );
+  const [row] = await transaction
+    .select({ role: users.role })
+    .from(sessions)
+    .innerJoin(users, eq(sessions.userId, users.id))
+    .where(
+      and(
+        eq(sessions.tokenHash, hashToken(token)),
+        isNull(sessions.revokedAt),
+        gt(sessions.expiresAt, new Date()),
+      ),
+    )
+    .limit(1);
+  if (!row || row.role !== "admin")
+    throw new PublicBookingError(
+      "CUSTOMER_REQUIRED",
+      "Administrator access required.",
+    );
+}
+
 function splitTravellerName(value: string) {
   const parts = value.trim().split(/\s+/);
   if (parts.length === 1) return { firstName: parts[0]!, lastName: "" };
@@ -467,6 +493,14 @@ export async function payCheckoutWithDevelopmentMock(
 export type CustomerPaymentState =
   "partially_paid" | "paid" | "partially_refunded" | "refunded";
 
+export type CustomerRefundState =
+  | "none"
+  | "processed_for_refund"
+  | "partially_refunded"
+  | "refunded"
+  | "refund_failed"
+  | "no_refund_due";
+
 function paymentSummary(
   paymentRows: Array<{
     amount: string;
@@ -594,6 +628,19 @@ function publicBooking(
 ) {
   const grandTotalCents = moneyToCents(row.total ?? "0");
   const summary = paymentSummary(paymentRows, grandTotalCents);
+  const requestedRefundCents = moneyToCents(row.refundAmount ?? "0");
+  const failedRefund = paymentRows.some(
+    (payment) => payment.purpose === "refund" && payment.status === "failed",
+  );
+  let refundStatus: CustomerRefundState = "none";
+  if (row.status === "cancelled") {
+    if (requestedRefundCents === 0) refundStatus = "no_refund_due";
+    else if (summary.refundedCents === 0)
+      refundStatus = failedRefund ? "refund_failed" : "processed_for_refund";
+    else
+      refundStatus =
+        summary.amountPaidCents === 0 ? "refunded" : "partially_refunded";
+  }
   const cancellationFeeCents = calculateCancellationFee(
     grandTotalCents,
     row.cancellationFeePercentageSnapshot ?? "0",
@@ -648,6 +695,7 @@ function publicBooking(
     notes: row.notes,
     createdDate: row.createdAt.toISOString(),
     paymentStatus: summary.status,
+    refundStatus,
   };
 }
 
@@ -732,8 +780,27 @@ export async function getMyBookingByReference(reference: string) {
       .where(eq(bookingTravellers.bookingId, row.id))
       .orderBy(asc(bookingTravellers.id))
       .limit(1);
+    const [customerProfile] = await transaction
+      .select({
+        name: users.name,
+        email: users.email,
+        phone: users.phone,
+        nationality: users.nationality,
+        dateOfBirth: users.dateOfBirth,
+      })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
     return {
       ...mapped,
+      customerProfile: customerProfile
+        ? {
+            ...customerProfile,
+            dateOfBirth: customerProfile.dateOfBirth
+              ? String(customerProfile.dateOfBirth).slice(0, 10)
+              : null,
+          }
+        : null,
       primaryTraveller: primaryTraveller
         ? {
             ...primaryTraveller,
@@ -837,7 +904,7 @@ async function cancellationContext(
   userId: string,
   lock: boolean,
 ) {
-  let query = transaction
+  const query = transaction
     .select({
       id: bookings.id,
       status: bookings.status,
@@ -865,7 +932,9 @@ async function cancellationContext(
       "CANCELLATION_NOT_ALLOWED",
       "Only a confirmed booking can be cancelled.",
     );
-  const departure = booking.departureDate ? nepalDate(booking.departureDate) : null;
+  const departure = booking.departureDate
+    ? nepalDate(booking.departureDate)
+    : null;
   if (!departure || departure < nepalToday())
     throw new PublicBookingError(
       "CANCELLATION_NOT_ALLOWED",
@@ -921,38 +990,6 @@ export async function cancelMyBooking(reference: string, reason?: string) {
       userId,
       true,
     );
-    const providers = new Set(
-      context.rows
-        .filter((row) => row.status === "paid" && row.purpose !== "refund")
-        .map((row) => row.provider),
-    );
-    if ([...providers].some((provider) => provider !== "dev_mock"))
-      throw new PublicBookingError(
-        "CANCELLATION_NOT_ALLOWED",
-        "This payment provider does not support customer self-service refunds yet.",
-      );
-    let refundReference: string | null = null;
-    if (context.refundCents > 0) {
-      const { refundDevelopmentMockPayment } =
-        await import("@/lib/payment-provider.server");
-      const refund = await refundDevelopmentMockPayment(
-        centsToMoney(context.refundCents),
-        context.booking.currency,
-      );
-      refundReference = refund.providerTransactionId;
-      await transaction.insert(payments).values({
-        bookingId: context.booking.id,
-        purpose: "refund",
-        amount: refund.amount,
-        currency: refund.currency,
-        provider: refund.provider,
-        providerTransactionId: refund.providerTransactionId,
-        status: "refunded",
-        verifiedAt: refund.verifiedAt,
-        paidAt: refund.verifiedAt,
-        metadata: JSON.stringify({ type: "development_mock_refund" }),
-      });
-    }
     const now = new Date();
     await transaction
       .update(bookings)
@@ -969,7 +1006,77 @@ export async function cancelMyBooking(reference: string, reason?: string) {
       ...cancellationPublic(context),
       status: "cancelled" as const,
       cancelledAt: now.toISOString(),
-      refundReference,
+      refundStatus:
+        context.refundCents > 0
+          ? ("processed_for_refund" as const)
+          : ("no_refund_due" as const),
+    };
+  });
+}
+
+export async function completeDevelopmentMockRefund(reference: string) {
+  return requireDb().transaction(async (transaction) => {
+    await requireAuthenticatedAdmin(transaction);
+    const [booking] = await transaction
+      .select({
+        id: bookings.id,
+        status: bookings.status,
+        requestedRefund: bookings.refundAmount,
+        currency: bookings.currency,
+      })
+      .from(bookings)
+      .where(eq(bookings.bookingReference, reference))
+      .limit(1)
+      .for("update");
+    if (!booking || booking.status !== "cancelled")
+      throw new PublicBookingError(
+        "BOOKING_NOT_FOUND",
+        "A cancelled booking could not be found.",
+      );
+    const requestedCents = moneyToCents(booking.requestedRefund ?? "0");
+    const rows = await transaction
+      .select()
+      .from(payments)
+      .where(eq(payments.bookingId, booking.id));
+    const summary = paymentSummary(rows, requestedCents);
+    const remainingCents = Math.max(requestedCents - summary.refundedCents, 0);
+    if (remainingCents === 0)
+      return {
+        status:
+          requestedCents === 0
+            ? ("no_refund_due" as const)
+            : summary.amountPaidCents === 0
+              ? ("refunded" as const)
+              : ("partially_refunded" as const),
+        refundedAmount: Number(centsToMoney(summary.refundedCents)),
+        reference: null,
+      };
+    const { refundDevelopmentMockPayment } =
+      await import("@/lib/payment-provider.server");
+    const refund = await refundDevelopmentMockPayment(
+      centsToMoney(remainingCents),
+      booking.currency,
+    );
+    await transaction.insert(payments).values({
+      bookingId: booking.id,
+      purpose: "refund",
+      amount: refund.amount,
+      currency: refund.currency,
+      provider: refund.provider,
+      providerTransactionId: refund.providerTransactionId,
+      status: "refunded",
+      verifiedAt: refund.verifiedAt,
+      paidAt: refund.verifiedAt,
+      metadata: JSON.stringify({ type: "development_mock_refund_completion" }),
+    });
+    const refundedCents = summary.refundedCents + remainingCents;
+    return {
+      status:
+        refundedCents >= summary.successfulPaidCents
+          ? ("refunded" as const)
+          : ("partially_refunded" as const),
+      refundedAmount: Number(centsToMoney(refundedCents)),
+      reference: refund.providerTransactionId,
     };
   });
 }
@@ -987,8 +1094,9 @@ export async function uploadMyBookingIdentityDocument(
       throw new PublicBookingError("DOCUMENT_INVALID", error.message);
     throw error;
   }
+  let replacedStorageKey: string | null = null;
   try {
-    return await requireDb().transaction(async (transaction) => {
+    const result = await requireDb().transaction(async (transaction) => {
       const userId = await requireAuthenticatedCustomer(transaction);
       const [booking] = await transaction
         .select({ id: bookings.id, status: bookings.status })
@@ -1009,35 +1117,56 @@ export async function uploadMyBookingIdentityDocument(
           "This booking could not be found for your account.",
         );
       const [existing] = await transaction
-        .select({ id: bookingIdentityDocuments.id })
+        .select({
+          id: bookingIdentityDocuments.id,
+          storageKey: bookingIdentityDocuments.storageKey,
+          verificationStatus: bookingIdentityDocuments.verificationStatus,
+        })
         .from(bookingIdentityDocuments)
         .where(eq(bookingIdentityDocuments.bookingId, booking.id))
         .limit(1);
-      if (existing)
+      if (existing && existing.verificationStatus !== "rejected")
         throw new PublicBookingError(
           "DOCUMENT_INVALID",
           "A passport or ID is already attached to this booking.",
         );
-      const [created] = await transaction
-        .insert(bookingIdentityDocuments)
-        .values({
-          bookingId: booking.id,
-          userId,
-          documentType,
-          storageKey: stored.storageKey,
-          originalFilename: stored.originalFilename,
-          mimeType: stored.mimeType,
-          fileSize: stored.fileSize,
-          verificationStatus: "pending",
-        })
-        .returning({
-          id: bookingIdentityDocuments.id,
-          documentType: bookingIdentityDocuments.documentType,
-          originalFilename: bookingIdentityDocuments.originalFilename,
-          verificationStatus: bookingIdentityDocuments.verificationStatus,
-        });
+      const values = {
+        bookingId: booking.id,
+        userId,
+        documentType,
+        storageKey: stored.storageKey,
+        originalFilename: stored.originalFilename,
+        mimeType: stored.mimeType,
+        fileSize: stored.fileSize,
+        verificationStatus: "pending" as const,
+        updatedAt: new Date(),
+      };
+      if (existing) replacedStorageKey = existing.storageKey;
+      const [created] = existing
+        ? await transaction
+            .update(bookingIdentityDocuments)
+            .set(values)
+            .where(eq(bookingIdentityDocuments.id, existing.id))
+            .returning({
+              id: bookingIdentityDocuments.id,
+              documentType: bookingIdentityDocuments.documentType,
+              originalFilename: bookingIdentityDocuments.originalFilename,
+              verificationStatus: bookingIdentityDocuments.verificationStatus,
+            })
+        : await transaction
+            .insert(bookingIdentityDocuments)
+            .values(values)
+            .returning({
+              id: bookingIdentityDocuments.id,
+              documentType: bookingIdentityDocuments.documentType,
+              originalFilename: bookingIdentityDocuments.originalFilename,
+              verificationStatus: bookingIdentityDocuments.verificationStatus,
+            });
       return created!;
     });
+    if (replacedStorageKey)
+      await deletePrivateIdentityDocument(replacedStorageKey);
+    return result;
   } catch (error) {
     await deletePrivateIdentityDocument(stored.storageKey);
     throw error;

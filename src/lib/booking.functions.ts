@@ -279,6 +279,23 @@ export const cancelMyBookingFn = createServerFn({ method: "POST" })
     }
   });
 
+export const completeDevelopmentMockRefundFn = createServerFn({
+  method: "POST",
+})
+  .validator(referenceSchema)
+  .handler(async ({ data }) => {
+    const { completeDevelopmentMockRefund } =
+      await import("@/lib/booking.server");
+    try {
+      return {
+        ok: true as const,
+        refund: await completeDevelopmentMockRefund(data.reference),
+      };
+    } catch (error) {
+      return publicFailure(error);
+    }
+  });
+
 export const uploadMyBookingIdentityDocumentFn = createServerFn({
   method: "POST",
 })

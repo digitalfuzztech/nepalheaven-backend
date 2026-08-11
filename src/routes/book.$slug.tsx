@@ -10,6 +10,7 @@ import { getPackageBySlugFn } from "@/lib/content.functions";
 import type { Package } from "@/lib/content.types";
 import { useAuth } from "@/lib/auth";
 import { createCheckoutIntentFn } from "@/lib/booking.functions";
+import { countryName } from "@/lib/countries";
 
 export const Route = createFileRoute("/book/$slug")({
   loader: async ({ params }) => {
@@ -152,7 +153,7 @@ function CheckoutPage() {
                 />
                 <ProfileField
                   label="Nationality"
-                  value={user.nationality || "Profile incomplete"}
+                  value={countryName(user.nationality) || "Profile incomplete"}
                 />
                 <ProfileField
                   label="Date of birth"
@@ -252,9 +253,33 @@ function CheckoutPage() {
               <div className="mt-6 space-y-3 text-sm">
                 <Review label="Traveller" value={user.name} />
                 <Review label="Email" value={user.email} />
+                <Review
+                  label="Contact number"
+                  value={user.phone || "Not provided"}
+                />
+                <Review
+                  label="Nationality"
+                  value={countryName(user.nationality) || "Not provided"}
+                />
+                <Review
+                  label="Date of birth"
+                  value={user.dateOfBirth || "Not provided"}
+                />
                 <Review label="Departure" value={date} />
                 <Review label="Travellers" value={String(travellers)} />
                 <Review label="Package tier" value={tier} />
+                <Review
+                  label="Notes"
+                  value={notes.trim() || "No notes provided"}
+                />
+                <Review
+                  label="Passport / ID"
+                  value={
+                    identityDocument
+                      ? `${documentType === "passport" ? "Passport" : "National ID"}: ${identityDocument.name}`
+                      : "Not uploaded"
+                  }
+                />
               </div>
               {checkout ? (
                 <div className="mt-7 rounded-2xl bg-accent p-5">
@@ -309,24 +334,61 @@ function CheckoutPage() {
                 <CreditCard className="h-4 w-4" /> Continue to payment options
               </button>
               <button
-                onClick={() => setStep(1)}
+                onClick={() => {
+                  setCheckout(null);
+                  setStep(1);
+                }}
                 className="mt-3 w-full rounded-2xl border border-border px-6 py-3 text-sm font-semibold"
               >
-                Back to details
+                Back / Edit Booking Details
               </button>
             </div>
-            <PackageSummary
+            <ReadOnlyPackageSummary
               pkg={pkg}
               travellers={travellers}
-              setTravellers={setTravellers}
               tier={tier}
-              setTier={setTier}
               total={checkout?.grandTotal ?? estimate}
             />
           </div>
         )}
       </div>
     </section>
+  );
+}
+
+function ReadOnlyPackageSummary({
+  pkg,
+  travellers,
+  tier,
+  total,
+}: {
+  pkg: Package;
+  travellers: number;
+  tier: string;
+  total: number;
+}) {
+  return (
+    <aside className="h-fit rounded-3xl border border-border bg-card p-7 lg:sticky lg:top-28">
+      <img
+        src={pkg.image}
+        alt=""
+        className="aspect-[16/10] w-full rounded-2xl object-cover"
+      />
+      <h2 className="mt-5 text-xl font-semibold">{pkg.title}</h2>
+      <div className="mt-5 space-y-3 text-sm">
+        <Review label="Travellers" value={String(travellers)} />
+        <Review label="Package tier" value={tier} />
+      </div>
+      <div className="mt-6 border-t border-border pt-5">
+        <div className="flex justify-between text-sm">
+          <span>Server-calculated total</span>
+          <strong>{formatMoney(total, selectedCurrency(pkg, tier))}</strong>
+        </div>
+      </div>
+      <div className="mt-5 flex items-center gap-2 text-xs text-muted-foreground">
+        <LockKeyhole className="h-4 w-4 text-forest" /> Review only
+      </div>
+    </aside>
   );
 }
 
