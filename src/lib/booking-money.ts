@@ -11,7 +11,8 @@ export function moneyToCents(value: string | number) {
     throw new Error("Invalid monetary value.");
   const [whole = "0", fraction = ""] = normalized.split(".");
   const cents = Number(BigInt(whole) * 100n + BigInt(fraction.padEnd(2, "0")));
-  if (!Number.isSafeInteger(cents)) throw new Error("Monetary value is too large.");
+  if (!Number.isSafeInteger(cents))
+    throw new Error("Monetary value is too large.");
   return cents;
 }
 
@@ -45,7 +46,8 @@ export function calculateCommercialAmounts(
     throw new Error("Traveller count must be between 1 and 12.");
   const unitPriceCents = moneyToCents(unitPrice);
   const subtotalCents = unitPriceCents * travellers;
-  if (!Number.isSafeInteger(subtotalCents)) throw new Error("Subtotal is too large.");
+  if (!Number.isSafeInteger(subtotalCents))
+    throw new Error("Subtotal is too large.");
   const vatBasisPoints = percentageToBasisPoints(configuration.vatPercentage);
   const depositBasisPoints = percentageToBasisPoints(
     configuration.minimumDepositPercentage,
@@ -81,8 +83,12 @@ export function calculateRefund(
   successfullyPaidCents: number,
   cancellationFeeCents: number,
 ) {
-  if (!Number.isSafeInteger(successfullyPaidCents) || successfullyPaidCents < 0 ||
-    !Number.isSafeInteger(cancellationFeeCents) || cancellationFeeCents < 0)
+  if (
+    !Number.isSafeInteger(successfullyPaidCents) ||
+    successfullyPaidCents < 0 ||
+    !Number.isSafeInteger(cancellationFeeCents) ||
+    cancellationFeeCents < 0
+  )
     throw new Error("Invalid cancellation amounts.");
   return Math.max(successfullyPaidCents - cancellationFeeCents, 0);
 }
@@ -91,10 +97,14 @@ export function calculateBalanceDueDate(
   departureDate: string,
   daysBeforeDeparture: number,
 ) {
-  if (!Number.isInteger(daysBeforeDeparture) || daysBeforeDeparture < 0 || daysBeforeDeparture > 730)
+  if (
+    !Number.isInteger(daysBeforeDeparture) ||
+    daysBeforeDeparture < 0 ||
+    daysBeforeDeparture > 730
+  )
     throw new Error("Balance due days must be between 0 and 730.");
   const date = new Date(`${departureDate}T00:00:00.000Z`);
   if (Number.isNaN(date.getTime())) throw new Error("Invalid departure date.");
   date.setUTCDate(date.getUTCDate() - daysBeforeDeparture);
-  return date;
+  return date.toISOString().slice(0, 10);
 }

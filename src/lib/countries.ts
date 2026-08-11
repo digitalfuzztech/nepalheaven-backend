@@ -1,4 +1,4 @@
-// ISO 3166-1 alpha-2 codes. Values stored in PostgreSQL are stable codes;
+// ISO 3166-1 alpha-2 codes. Values stored in the database are stable codes;
 // labels are localized by the runtime's built-in Intl data.
 export const COUNTRY_CODES = [
   "AD",

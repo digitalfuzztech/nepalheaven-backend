@@ -7,6 +7,23 @@ import {
   siteSettings,
   testimonials,
 } from "@/db/schema/cms";
+import {
+  destinationExclusions,
+  destinationHighlights,
+  destinationInclusions,
+  destinationItineraries,
+  destinations,
+  destinationTips,
+} from "@/db/schema/destinations";
+import {
+  packageDestinations,
+  packageExclusions,
+  packageHighlights,
+  packageInclusions,
+  packageItineraries,
+  packages,
+  packageTiers,
+} from "@/db/schema/packages";
 import { resolveAssetReference } from "@/lib/asset-resolver";
 import type {
   Activity,
@@ -84,29 +101,73 @@ function resolveImageItems<T extends { image: string }>(items: T[]): T[] {
   }));
 }
 
+function groupBy<T, K>(items: T[], getKey: (item: T) => K): Map<K, T[]> {
+  const groups = new Map<K, T[]>();
+  for (const item of items) {
+    const key = getKey(item);
+    const group = groups.get(key);
+    if (group) group.push(item);
+    else groups.set(key, [item]);
+  }
+  return groups;
+}
+
 export async function getDestinations(): Promise<Destination[]> {
   const database = requireDb();
-  const rows = await database.query.destinations.findMany({
-    where: (table, { eq: equals }) => equals(table.status, true),
-    orderBy: (table, { asc: ascending }) => [ascending(table.sortOrder)],
-    with: {
-      highlights: {
-        orderBy: (table, { asc: ascending }) => [ascending(table.sortOrder)],
-      },
-      tips: {
-        orderBy: (table, { asc: ascending }) => [ascending(table.sortOrder)],
-      },
-      itineraries: {
-        orderBy: (table, { asc: ascending }) => [ascending(table.sortOrder)],
-      },
-      inclusions: {
-        orderBy: (table, { asc: ascending }) => [ascending(table.sortOrder)],
-      },
-      exclusions: {
-        orderBy: (table, { asc: ascending }) => [ascending(table.sortOrder)],
-      },
-    },
-  });
+  const rows = await database
+    .select()
+    .from(destinations)
+    .where(eq(destinations.status, true))
+    .orderBy(asc(destinations.sortOrder));
+
+  if (rows.length === 0) return [];
+  const destinationIds = rows.map((row) => row.id);
+  const [highlights, tips, itineraries, inclusions, exclusions] =
+    await Promise.all([
+      database
+        .select()
+        .from(destinationHighlights)
+        .where(inArray(destinationHighlights.destinationId, destinationIds))
+        .orderBy(asc(destinationHighlights.sortOrder)),
+      database
+        .select()
+        .from(destinationTips)
+        .where(inArray(destinationTips.destinationId, destinationIds))
+        .orderBy(asc(destinationTips.sortOrder)),
+      database
+        .select()
+        .from(destinationItineraries)
+        .where(inArray(destinationItineraries.destinationId, destinationIds))
+        .orderBy(asc(destinationItineraries.sortOrder)),
+      database
+        .select()
+        .from(destinationInclusions)
+        .where(inArray(destinationInclusions.destinationId, destinationIds))
+        .orderBy(asc(destinationInclusions.sortOrder)),
+      database
+        .select()
+        .from(destinationExclusions)
+        .where(inArray(destinationExclusions.destinationId, destinationIds))
+        .orderBy(asc(destinationExclusions.sortOrder)),
+    ]);
+
+  const highlightsByDestination = groupBy(
+    highlights,
+    (item) => item.destinationId,
+  );
+  const tipsByDestination = groupBy(tips, (item) => item.destinationId);
+  const itinerariesByDestination = groupBy(
+    itineraries,
+    (item) => item.destinationId,
+  );
+  const inclusionsByDestination = groupBy(
+    inclusions,
+    (item) => item.destinationId,
+  );
+  const exclusionsByDestination = groupBy(
+    exclusions,
+    (item) => item.destinationId,
+  );
 
   return rows.map((row) => ({
     slug: row.slug,
@@ -122,15 +183,21 @@ export async function getDestinations(): Promise<Destination[]> {
     category: row.category ?? "",
     short: row.shortDescription ?? "",
     description: row.description ?? "",
-    highlights: row.highlights.map((item) => item.item),
-    tips: row.tips.map((item) => item.item),
-    itinerary: row.itineraries.map((item) => ({
+    highlights: (highlightsByDestination.get(row.id) ?? []).map(
+      (item) => item.item,
+    ),
+    tips: (tipsByDestination.get(row.id) ?? []).map((item) => item.item),
+    itinerary: (itinerariesByDestination.get(row.id) ?? []).map((item) => ({
       day: item.dayLabel,
       title: item.title,
       detail: item.description ?? "",
     })),
-    included: row.inclusions.map((item) => item.item),
-    excluded: row.exclusions.map((item) => item.item),
+    included: (inclusionsByDestination.get(row.id) ?? []).map(
+      (item) => item.item,
+    ),
+    excluded: (exclusionsByDestination.get(row.id) ?? []).map(
+      (item) => item.item,
+    ),
   }));
 }
 
@@ -143,38 +210,94 @@ export async function getDestinationBySlug(
 
 export async function getPackages(): Promise<Package[]> {
   const database = requireDb();
-  const rows = await database.query.packages.findMany({
-    where: (table, { eq: equals }) => equals(table.status, true),
-    orderBy: (table, { asc: ascending }) => [ascending(table.sortOrder)],
-    with: {
-      primaryDestination: true,
-      destinations: {
-        orderBy: (table, { asc: ascending }) => [ascending(table.sortOrder)],
-        with: { destination: true },
-      },
-      highlights: {
-        orderBy: (table, { asc: ascending }) => [ascending(table.sortOrder)],
-      },
-      tiers: {
-        orderBy: (table, { asc: ascending }) => [ascending(table.sortOrder)],
-      },
-      itineraries: {
-        orderBy: (table, { asc: ascending }) => [ascending(table.sortOrder)],
-      },
-      inclusions: {
-        orderBy: (table, { asc: ascending }) => [ascending(table.sortOrder)],
-      },
-      exclusions: {
-        orderBy: (table, { asc: ascending }) => [ascending(table.sortOrder)],
-      },
-    },
-  });
+  const rows = await database
+    .select()
+    .from(packages)
+    .where(eq(packages.status, true))
+    .orderBy(asc(packages.sortOrder));
+
+  if (rows.length === 0) return [];
+  const packageIds = rows.map((row) => row.id);
+  const primaryDestinationIds = rows.flatMap((row) =>
+    row.destinationId ? [row.destinationId] : [],
+  );
+  const [
+    primaryDestinations,
+    destinationLinks,
+    highlights,
+    tiers,
+    itineraries,
+    inclusions,
+    exclusions,
+  ] = await Promise.all([
+    primaryDestinationIds.length === 0
+      ? Promise.resolve([])
+      : database
+          .select()
+          .from(destinations)
+          .where(inArray(destinations.id, primaryDestinationIds)),
+    database
+      .select({
+        packageId: packageDestinations.packageId,
+        destination: destinations,
+      })
+      .from(packageDestinations)
+      .innerJoin(
+        destinations,
+        eq(packageDestinations.destinationId, destinations.id),
+      )
+      .where(inArray(packageDestinations.packageId, packageIds))
+      .orderBy(asc(packageDestinations.sortOrder)),
+    database
+      .select()
+      .from(packageHighlights)
+      .where(inArray(packageHighlights.packageId, packageIds))
+      .orderBy(asc(packageHighlights.sortOrder)),
+    database
+      .select()
+      .from(packageTiers)
+      .where(inArray(packageTiers.packageId, packageIds))
+      .orderBy(asc(packageTiers.sortOrder)),
+    database
+      .select()
+      .from(packageItineraries)
+      .where(inArray(packageItineraries.packageId, packageIds))
+      .orderBy(asc(packageItineraries.sortOrder)),
+    database
+      .select()
+      .from(packageInclusions)
+      .where(inArray(packageInclusions.packageId, packageIds))
+      .orderBy(asc(packageInclusions.sortOrder)),
+    database
+      .select()
+      .from(packageExclusions)
+      .where(inArray(packageExclusions.packageId, packageIds))
+      .orderBy(asc(packageExclusions.sortOrder)),
+  ]);
+
+  const primaryDestinationById = new Map(
+    primaryDestinations.map((destination) => [destination.id, destination]),
+  );
+  const destinationsByPackage = groupBy(
+    destinationLinks,
+    (item) => item.packageId,
+  );
+  const highlightsByPackage = groupBy(highlights, (item) => item.packageId);
+  const tiersByPackage = groupBy(tiers, (item) => item.packageId);
+  const itinerariesByPackage = groupBy(itineraries, (item) => item.packageId);
+  const inclusionsByPackage = groupBy(inclusions, (item) => item.packageId);
+  const exclusionsByPackage = groupBy(exclusions, (item) => item.packageId);
 
   return rows.map((row) => ({
     slug: row.slug,
     title: row.title,
-    destination: row.destinationLabel ?? row.primaryDestination?.name ?? "",
-    destinations: row.destinations.map((item) => ({
+    destination:
+      row.destinationLabel ??
+      (row.destinationId
+        ? primaryDestinationById.get(row.destinationId)?.name
+        : undefined) ??
+      "",
+    destinations: (destinationsByPackage.get(row.id) ?? []).map((item) => ({
       slug: item.destination.slug,
       name: item.destination.name,
     })),
@@ -188,15 +311,17 @@ export async function getPackages(): Promise<Package[]> {
     difficulty: titleCaseDifficulty(row.difficulty),
     style: row.style ?? "",
     short: row.shortDescription ?? "",
-    highlights: row.highlights.map((item) => item.item),
-    itinerary: row.itineraries.map((item) => ({
+    highlights: (highlightsByPackage.get(row.id) ?? []).map(
+      (item) => item.item,
+    ),
+    itinerary: (itinerariesByPackage.get(row.id) ?? []).map((item) => ({
       day: item.dayLabel ?? (item.day === null ? "" : `Day ${item.day}`),
       title: item.title,
       detail: item.description ?? "",
     })),
-    included: row.inclusions.map((item) => item.item),
-    excluded: row.exclusions.map((item) => item.item),
-    tiers: row.tiers.map((item) => ({
+    included: (inclusionsByPackage.get(row.id) ?? []).map((item) => item.item),
+    excluded: (exclusionsByPackage.get(row.id) ?? []).map((item) => item.item),
+    tiers: (tiersByPackage.get(row.id) ?? []).map((item) => ({
       name: item.name,
       note: item.description ?? "",
       price: Number(item.price),

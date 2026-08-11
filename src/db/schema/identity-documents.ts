@@ -1,46 +1,46 @@
 import { relations } from "drizzle-orm";
 import {
   index,
-  integer,
-  pgEnum,
-  pgTable,
+  int,
+  mysqlEnum,
+  mysqlTable,
   text,
-  timestamp,
-  uuid,
-} from "drizzle-orm/pg-core";
+  varchar,
+} from "drizzle-orm/mysql-core";
 import { users } from "./users";
 import { bookings } from "./bookings";
+import { defaultMomentColumn, uuidColumn, uuidPrimaryColumn } from "./columns";
 
-export const identityDocumentTypeEnum = pgEnum("identity_document_type", [
-  "passport",
-  "national_id",
-]);
-export const identityVerificationStatusEnum = pgEnum(
-  "identity_verification_status",
-  ["pending", "verified", "rejected"],
-);
+export const identityDocumentTypeValues = ["passport", "national_id"] as const;
+export const identityVerificationStatusValues = [
+  "pending",
+  "verified",
+  "rejected",
+] as const;
 
-export const userIdentityDocuments = pgTable(
+export const userIdentityDocuments = mysqlTable(
   "user_identity_documents",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    userId: uuid("user_id")
+    id: uuidPrimaryColumn("id").primaryKey(),
+    userId: uuidColumn("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    documentType: identityDocumentTypeEnum("document_type").notNull(),
-    storageKey: text("storage_key").notNull().unique(),
+    documentType: mysqlEnum(
+      "document_type",
+      identityDocumentTypeValues,
+    ).notNull(),
+    storageKey: varchar("storage_key", { length: 191 }).notNull().unique(),
     originalFilename: text("original_filename").notNull(),
     mimeType: text("mime_type").notNull(),
-    fileSize: integer("file_size").notNull(),
-    verificationStatus: identityVerificationStatusEnum("verification_status")
+    fileSize: int("file_size").notNull(),
+    verificationStatus: mysqlEnum(
+      "verification_status",
+      identityVerificationStatusValues,
+    )
       .default("pending")
       .notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    createdAt: defaultMomentColumn("created_at").notNull(),
+    updatedAt: defaultMomentColumn("updated_at").notNull(),
   },
   (table) => [index("user_identity_documents_user_id_idx").on(table.userId)],
 );
@@ -55,31 +55,33 @@ export const userIdentityDocumentsRelations = relations(
   }),
 );
 
-export const bookingIdentityDocuments = pgTable(
+export const bookingIdentityDocuments = mysqlTable(
   "booking_identity_documents",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    bookingId: uuid("booking_id")
+    id: uuidPrimaryColumn("id").primaryKey(),
+    bookingId: uuidColumn("booking_id")
       .notNull()
       .unique()
       .references(() => bookings.id, { onDelete: "cascade" }),
-    userId: uuid("user_id")
+    userId: uuidColumn("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    documentType: identityDocumentTypeEnum("document_type").notNull(),
-    storageKey: text("storage_key").notNull().unique(),
+    documentType: mysqlEnum(
+      "document_type",
+      identityDocumentTypeValues,
+    ).notNull(),
+    storageKey: varchar("storage_key", { length: 191 }).notNull().unique(),
     originalFilename: text("original_filename").notNull(),
     mimeType: text("mime_type").notNull(),
-    fileSize: integer("file_size").notNull(),
-    verificationStatus: identityVerificationStatusEnum("verification_status")
+    fileSize: int("file_size").notNull(),
+    verificationStatus: mysqlEnum(
+      "verification_status",
+      identityVerificationStatusValues,
+    )
       .default("pending")
       .notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
+    createdAt: defaultMomentColumn("created_at").notNull(),
+    updatedAt: defaultMomentColumn("updated_at").notNull(),
   },
   (table) => [index("booking_identity_documents_user_id_idx").on(table.userId)],
 );

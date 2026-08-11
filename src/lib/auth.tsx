@@ -25,7 +25,7 @@ type AuthContextValue = {
   user: AuthUser | null;
   ready: boolean;
   login: (email: string, password: string, expectedRole?: UserRole) => Promise<{ ok: true; user: AuthUser } | { ok: false; message: string }>;
-  register: (input: { name: string; email: string; password: string; nationality: string; phone: string; dateOfBirth: string; country?: string }) => Promise<{ ok: true; user: AuthUser } | { ok: false; message: string }>;
+  register: (input: { name: string; email: string; password: string; nationality: string; phone: string; dateOfBirth: string }) => Promise<{ ok: true; user: AuthUser } | { ok: false; message: string }>;
   requestPasswordReset: (email: string) => Promise<{ ok: boolean; message: string; devResetToken?: string }>;
   resetPassword: (token: string, password: string) => Promise<{ ok: boolean; message: string }>;
   logout: () => Promise<void>;

@@ -1,15 +1,23 @@
-import { index, pgTable, timestamp, uuid, text } from "drizzle-orm/pg-core";
+import { index, mysqlTable, varchar } from "drizzle-orm/mysql-core";
 import { users } from "./users";
+import {
+  defaultMomentColumn,
+  momentColumn,
+  uuidColumn,
+  uuidPrimaryColumn,
+} from "./columns";
 
-export const sessions = pgTable(
+export const sessions = mysqlTable(
   "sessions",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    tokenHash: text("token_hash").notNull().unique(),
-    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    id: uuidPrimaryColumn("id").primaryKey(),
+    tokenHash: varchar("token_hash", { length: 64 }).notNull().unique(),
+    userId: uuidColumn("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    expiresAt: momentColumn("expires_at").notNull(),
+    createdAt: defaultMomentColumn("created_at").notNull(),
+    revokedAt: momentColumn("revoked_at"),
   },
   (table) => ({
     userIdIdx: index("sessions_user_id_idx").on(table.userId),

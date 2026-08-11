@@ -1,11 +1,11 @@
-import { createHash, randomBytes, scryptSync } from "node:crypto";
+import { createHash, randomBytes, randomUUID, scryptSync } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { setResponseHeader } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { db } from "@/db";
 import { sessions } from "@/db/schema/sessions";
 import { users } from "@/db/schema/users";
-import { isCountryCode } from "@/lib/countries";
+import { countryName, isCountryCode } from "@/lib/countries";
 
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60;
 
@@ -25,7 +25,6 @@ const registrationSchema = z.object({
     .min(7, "Enter a valid contact number.")
     .max(30)
     .regex(/^\+?[0-9][0-9 ()-]{5,28}[0-9]$/, "Enter a valid contact number."),
-  country: z.string().trim().max(100).optional(),
   nationality: z
     .string()
     .trim()
@@ -82,7 +81,6 @@ export async function registerCustomer(formData: FormData) {
     email: text(formData, "email"),
     password: text(formData, "password"),
     phone: text(formData, "phone"),
-    country: text(formData, "country") || undefined,
     nationality: text(formData, "nationality"),
     dateOfBirth: text(formData, "dateOfBirth"),
   });
@@ -100,22 +98,30 @@ export async function registerCustomer(formData: FormData) {
       "An account with this email already exists.",
     );
 
+  const country = countryName(parsed.data.nationality);
+  if (!country)
+    throw new PublicRegistrationError("Select a valid nationality.");
+
   const sessionToken = randomBytes(32).toString("base64url");
   const result = await db.transaction(async (transaction) => {
+    const userId = randomUUID();
+    await transaction.insert(users).values({
+      id: userId,
+      role: "customer",
+      name: parsed.data.name,
+      email: parsed.data.email,
+      passwordHash: hashPassword(parsed.data.password),
+      phone: parsed.data.phone.replace(/[ ()-]/g, ""),
+      country,
+      nationality: parsed.data.nationality,
+      dateOfBirth: parsed.data.dateOfBirth,
+    });
     const [created] = await transaction
-      .insert(users)
-      .values({
-        role: "customer",
-        name: parsed.data.name,
-        email: parsed.data.email,
-        passwordHash: hashPassword(parsed.data.password),
-          phone: parsed.data.phone.replace(/[ ()-]/g, ""),
-        country: parsed.data.country || null,
-        nationality: parsed.data.nationality,
-        dateOfBirth: parsed.data.dateOfBirth,
-      })
-      .returning();
-    if (!created) throw new Error("User insert did not return a row.");
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (!created) throw new Error("User insert could not be read back.");
     await transaction.insert(sessions).values({
       tokenHash: hashToken(sessionToken),
       userId: created.id,

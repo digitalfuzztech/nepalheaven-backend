@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { getRequestHeader } from "@tanstack/react-start/server";
 import { db } from "@/db";
@@ -76,7 +76,7 @@ async function getAuthenticatedCustomerId(
 }
 
 function parseTravelDate(value: string | undefined) {
-  return value ? new Date(`${value}T00:00:00.000Z`) : null;
+  return value ?? null;
 }
 
 export async function createPublicLead(input: CreateLeadInput) {
@@ -124,27 +124,24 @@ export async function createPublicLead(input: CreateLeadInput) {
 
     const message = input.message?.trim() || null;
 
-    const [created] = await transaction
-      .insert(leads)
-      .values({
-        userId,
-        packageId,
-        type: input.type,
-        name: input.name.trim(),
-        email: input.email.trim().toLowerCase(),
-        phone: input.phone?.trim() || null,
-        travelDate: parseTravelDate(input.travelDate),
-        travellers: input.travellers ?? null,
-        message,
-        source: input.source,
-        status: "new",
-      })
-      .returning({ id: leads.id });
-
-    if (!created) throw new Error("Lead insert did not return a record.");
+    const leadId = randomUUID();
+    await transaction.insert(leads).values({
+      id: leadId,
+      userId,
+      packageId,
+      type: input.type,
+      name: input.name.trim(),
+      email: input.email.trim().toLowerCase(),
+      phone: input.phone?.trim() || null,
+      travelDate: parseTravelDate(input.travelDate),
+      travellers: input.travellers ?? null,
+      message,
+      source: input.source,
+      status: "new",
+    });
 
     await transaction.insert(leadActivities).values({
-      leadId: created.id,
+      leadId,
       userId,
       type: "lead_created",
       description: "Lead created from the public website.",
@@ -160,7 +157,7 @@ export async function createPublicLead(input: CreateLeadInput) {
       }),
     });
 
-    return { id: created.id, userId, packageId };
+    return { id: leadId, userId, packageId };
   });
 }
 

@@ -1,72 +1,71 @@
 import { relations } from "drizzle-orm";
 import {
   boolean,
-  integer,
-  numeric,
-  pgEnum,
-  pgTable,
+  decimal,
+  int,
+  mysqlEnum,
+  mysqlTable,
   text,
-  timestamp,
   uniqueIndex,
-  uuid,
-} from "drizzle-orm/pg-core";
+  varchar,
+} from "drizzle-orm/mysql-core";
 import { destinations } from "./destinations";
+import { defaultMomentColumn, uuidColumn, uuidPrimaryColumn } from "./columns";
 
-export const packageDifficultyEnum = pgEnum("package_difficulty", [
+export const packageDifficultyValues = [
   "easy",
   "moderate",
   "challenging",
   "extreme",
-]);
+] as const;
 
-export const packages = pgTable("packages", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  destinationId: uuid("destination_id").references(() => destinations.id, {
-    onDelete: "set null",
-  }),
+export const packages = mysqlTable("packages", {
+  id: uuidPrimaryColumn("id").primaryKey(),
+  destinationId: uuidColumn("destination_id").references(
+    () => destinations.id,
+    {
+      onDelete: "set null",
+    },
+  ),
   title: text("title").notNull(),
-  slug: text("slug").notNull().unique(),
+  slug: varchar("slug", { length: 191 }).notNull().unique(),
   destinationLabel: text("destination_label"),
   style: text("style"),
   shortDescription: text("short_description"),
   description: text("description"),
-  days: integer("days"),
-  difficulty: packageDifficultyEnum("difficulty"),
-  maxAltitude: integer("max_altitude"),
-  startingPrice: numeric("starting_price", { precision: 12, scale: 2 }),
-  oldPrice: numeric("old_price", { precision: 12, scale: 2 }),
+  days: int("days"),
+  difficulty: mysqlEnum("difficulty", packageDifficultyValues),
+  maxAltitude: int("max_altitude"),
+  startingPrice: decimal("starting_price", { precision: 12, scale: 2 }),
+  oldPrice: decimal("old_price", { precision: 12, scale: 2 }),
   currency: text("currency").default("USD").notNull(),
-  cancellationFeePercentage: numeric("cancellation_fee_percentage", {
+  cancellationFeePercentage: decimal("cancellation_fee_percentage", {
     precision: 5,
     scale: 2,
   }),
-  rating: numeric("rating", { precision: 3, scale: 2 }),
-  reviewCount: integer("review_count").default(0).notNull(),
+  rating: decimal("rating", { precision: 3, scale: 2 }),
+  reviewCount: int("review_count").default(0).notNull(),
   heroImage: text("hero_image"),
-  sortOrder: integer("sort_order").default(0).notNull(),
+  sortOrder: int("sort_order").default(0).notNull(),
   status: boolean("status").default(true).notNull(),
   featured: boolean("featured").default(false).notNull(),
   seoTitle: text("seo_title"),
   seoDescription: text("seo_description"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
+  createdAt: defaultMomentColumn("created_at").notNull(),
+  updatedAt: defaultMomentColumn("updated_at").notNull(),
 });
 
-export const packageDestinations = pgTable(
+export const packageDestinations = mysqlTable(
   "package_destinations",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    packageId: uuid("package_id")
+    id: uuidPrimaryColumn("id").primaryKey(),
+    packageId: uuidColumn("package_id")
       .notNull()
       .references(() => packages.id, { onDelete: "cascade" }),
-    destinationId: uuid("destination_id")
+    destinationId: uuidColumn("destination_id")
       .notNull()
       .references(() => destinations.id, { onDelete: "cascade" }),
-    sortOrder: integer("sort_order").default(0).notNull(),
+    sortOrder: int("sort_order").default(0).notNull(),
   },
   (table) => [
     uniqueIndex("package_destinations_package_destination_unique").on(
@@ -76,59 +75,59 @@ export const packageDestinations = pgTable(
   ],
 );
 
-export const packageHighlights = pgTable("package_highlights", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  packageId: uuid("package_id")
+export const packageHighlights = mysqlTable("package_highlights", {
+  id: uuidPrimaryColumn("id").primaryKey(),
+  packageId: uuidColumn("package_id")
     .notNull()
     .references(() => packages.id, { onDelete: "cascade" }),
   item: text("item").notNull(),
-  sortOrder: integer("sort_order").default(0).notNull(),
+  sortOrder: int("sort_order").default(0).notNull(),
 });
 
-export const packageTiers = pgTable("package_tiers", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  packageId: uuid("package_id")
+export const packageTiers = mysqlTable("package_tiers", {
+  id: uuidPrimaryColumn("id").primaryKey(),
+  packageId: uuidColumn("package_id")
     .notNull()
     .references(() => packages.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   description: text("description"),
-  price: numeric("price", { precision: 12, scale: 2 }).notNull(),
+  price: decimal("price", { precision: 12, scale: 2 }).notNull(),
   currency: text("currency").default("USD").notNull(),
-  sortOrder: integer("sort_order").default(0).notNull(),
+  sortOrder: int("sort_order").default(0).notNull(),
 });
 
-export const packageItineraries = pgTable("package_itineraries", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  packageId: uuid("package_id")
+export const packageItineraries = mysqlTable("package_itineraries", {
+  id: uuidPrimaryColumn("id").primaryKey(),
+  packageId: uuidColumn("package_id")
     .notNull()
     .references(() => packages.id, { onDelete: "cascade" }),
   // Kept for existing numeric itineraries. New content should use dayLabel.
-  day: integer("day"),
+  day: int("day"),
   dayLabel: text("day_label"),
   title: text("title").notNull(),
   description: text("description"),
   accommodation: text("accommodation"),
   meals: text("meals"),
-  altitude: integer("altitude"),
-  sortOrder: integer("sort_order").default(0).notNull(),
+  altitude: int("altitude"),
+  sortOrder: int("sort_order").default(0).notNull(),
 });
 
-export const packageInclusions = pgTable("package_inclusions", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  packageId: uuid("package_id")
+export const packageInclusions = mysqlTable("package_inclusions", {
+  id: uuidPrimaryColumn("id").primaryKey(),
+  packageId: uuidColumn("package_id")
     .notNull()
     .references(() => packages.id, { onDelete: "cascade" }),
   item: text("item").notNull(),
-  sortOrder: integer("sort_order").default(0).notNull(),
+  sortOrder: int("sort_order").default(0).notNull(),
 });
 
-export const packageExclusions = pgTable("package_exclusions", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  packageId: uuid("package_id")
+export const packageExclusions = mysqlTable("package_exclusions", {
+  id: uuidPrimaryColumn("id").primaryKey(),
+  packageId: uuidColumn("package_id")
     .notNull()
     .references(() => packages.id, { onDelete: "cascade" }),
   item: text("item").notNull(),
-  sortOrder: integer("sort_order").default(0).notNull(),
+  sortOrder: int("sort_order").default(0).notNull(),
 });
 
 export const packagesRelations = relations(packages, ({ many, one }) => ({

@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import { getRequestHeader } from "@tanstack/react-start/server";
 import { db } from "@/db";
@@ -31,7 +31,8 @@ import {
 const SESSION_COOKIE = "nepalheaven_session";
 const CHECKOUT_LIFETIME_MS = 2 * 60 * 60 * 1000;
 
-function nepalDate(value: Date) {
+function nepalDate(value: Date | string) {
+  if (typeof value === "string") return value.slice(0, 10);
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Kathmandu",
     year: "numeric",
@@ -178,7 +179,7 @@ function checkoutPublic(row: {
   packageSlug: string;
   packageTitle: string;
   tierName: string;
-  departureDate: Date;
+  departureDate: string;
   travellers: number;
   unitPriceSnapshot: string;
   subtotal: string;
@@ -329,50 +330,51 @@ export async function createCheckoutIntent(input: CreateCheckoutIntentInput) {
                   configuration.defaultCancellationFeePercentage.toFixed(2),
                 source: "global",
               };
+      const intentId = randomUUID();
+      await transaction.insert(bookingIntents).values({
+        id: intentId,
+        checkoutReference: generateCheckoutReference(),
+        userId,
+        packageId: packageRow.id,
+        packageTierId: tier.id,
+        departureDate: input.departureDate,
+        travellers: input.travellers,
+        primaryTravellerFirstName: traveller.firstName,
+        primaryTravellerLastName: traveller.lastName,
+        primaryTravellerEmail: customer.email,
+        primaryTravellerPhone: customer.phone,
+        primaryTravellerNationality: customer.nationality,
+        primaryTravellerDateOfBirth: customer.dateOfBirth,
+        notes: input.notes?.trim() || null,
+        unitPriceSnapshot: centsToMoney(amounts.unitPriceCents),
+        subtotal: centsToMoney(amounts.subtotalCents),
+        vatEnabledSnapshot: configuration.vatEnabled,
+        vatPercentageSnapshot: configuration.vatPercentage.toFixed(2),
+        vatAmount: centsToMoney(amounts.vatAmountCents),
+        grandTotal: centsToMoney(amounts.grandTotalCents),
+        minimumDepositPercentageSnapshot:
+          configuration.minimumDepositPercentage.toFixed(2),
+        minimumDepositAmount: centsToMoney(amounts.minimumDepositCents),
+        balanceDueDaysSnapshot: configuration.balanceDueDaysBeforeDeparture,
+        cancellationFeePercentageSnapshot: cancellationPolicy.percentage,
+        cancellationPolicySourceSnapshot: cancellationPolicy.source,
+        stagedDocumentType: storedDocument ? input.documentType : null,
+        stagedDocumentStorageKey: storedDocument?.storageKey ?? null,
+        stagedDocumentOriginalFilename:
+          storedDocument?.originalFilename ?? null,
+        stagedDocumentMimeType: storedDocument?.mimeType ?? null,
+        stagedDocumentFileSize: storedDocument?.fileSize ?? null,
+        currency: tier.currency,
+        selectedPaymentOption: "minimum",
+        status: "open",
+        expiresAt: new Date(Date.now() + CHECKOUT_LIFETIME_MS),
+      });
       const [intent] = await transaction
-        .insert(bookingIntents)
-        .values({
-          checkoutReference: generateCheckoutReference(),
-          userId,
-          packageId: packageRow.id,
-          packageTierId: tier.id,
-          departureDate: new Date(`${input.departureDate}T00:00:00.000Z`),
-          travellers: input.travellers,
-          primaryTravellerFirstName: traveller.firstName,
-          primaryTravellerLastName: traveller.lastName,
-          primaryTravellerEmail: customer.email,
-          primaryTravellerPhone: customer.phone,
-          primaryTravellerNationality: customer.nationality,
-          primaryTravellerDateOfBirth: new Date(
-            `${customer.dateOfBirth}T00:00:00.000Z`,
-          ),
-          notes: input.notes?.trim() || null,
-          unitPriceSnapshot: centsToMoney(amounts.unitPriceCents),
-          subtotal: centsToMoney(amounts.subtotalCents),
-          vatEnabledSnapshot: configuration.vatEnabled,
-          vatPercentageSnapshot: configuration.vatPercentage.toFixed(2),
-          vatAmount: centsToMoney(amounts.vatAmountCents),
-          grandTotal: centsToMoney(amounts.grandTotalCents),
-          minimumDepositPercentageSnapshot:
-            configuration.minimumDepositPercentage.toFixed(2),
-          minimumDepositAmount: centsToMoney(amounts.minimumDepositCents),
-          balanceDueDaysSnapshot: configuration.balanceDueDaysBeforeDeparture,
-          cancellationFeePercentageSnapshot: cancellationPolicy.percentage,
-          cancellationPolicySourceSnapshot: cancellationPolicy.source,
-          stagedDocumentType: storedDocument ? input.documentType : null,
-          stagedDocumentStorageKey: storedDocument?.storageKey ?? null,
-          stagedDocumentOriginalFilename:
-            storedDocument?.originalFilename ?? null,
-          stagedDocumentMimeType: storedDocument?.mimeType ?? null,
-          stagedDocumentFileSize: storedDocument?.fileSize ?? null,
-          currency: tier.currency,
-          selectedPaymentOption: "minimum",
-          status: "open",
-          expiresAt: new Date(Date.now() + CHECKOUT_LIFETIME_MS),
-        })
-        .returning();
-      if (!intent)
-        throw new Error("Checkout intent insert did not return a row.");
+        .select()
+        .from(bookingIntents)
+        .where(eq(bookingIntents.id, intentId))
+        .limit(1);
+      if (!intent) throw new Error("Checkout intent could not be read back.");
       return checkoutPublic({
         ...intent,
         packageSlug: packageRow.slug,
@@ -597,7 +599,7 @@ type PublicBookingRow = {
   packageDifficulty: "easy" | "moderate" | "challenging" | "extreme" | null;
   tierName: string | null;
   travellers: number;
-  departureDate: Date | null;
+  departureDate: string | null;
   unitPriceSnapshot: string | null;
   subtotal: string | null;
   vatPercentageSnapshot: string | null;
@@ -609,7 +611,7 @@ type PublicBookingRow = {
   initialPaymentPercentageSnapshot: string | null;
   amountInitiallyPaid: string | null;
   remainingBalanceSnapshot: string | null;
-  balanceDueDate: Date | null;
+  balanceDueDate: string | null;
   cancellationFeePercentageSnapshot: string | null;
   cancellationPolicySourceSnapshot: string | null;
   cancellationFeeAmount: string | null;
@@ -804,9 +806,7 @@ export async function getMyBookingByReference(reference: string) {
       primaryTraveller: primaryTraveller
         ? {
             ...primaryTraveller,
-            dateOfBirth: primaryTraveller.dateOfBirth
-              ? nepalDate(primaryTraveller.dateOfBirth)
-              : null,
+            dateOfBirth: primaryTraveller.dateOfBirth ?? null,
           }
         : null,
       paymentHistory: rowPayments.map((payment) => ({
@@ -932,9 +932,7 @@ async function cancellationContext(
       "CANCELLATION_NOT_ALLOWED",
       "Only a confirmed booking can be cancelled.",
     );
-  const departure = booking.departureDate
-    ? nepalDate(booking.departureDate)
-    : null;
+  const departure = booking.departureDate ?? null;
   if (!departure || departure < nepalToday())
     throw new PublicBookingError(
       "CANCELLATION_NOT_ALLOWED",
@@ -1142,27 +1140,24 @@ export async function uploadMyBookingIdentityDocument(
         updatedAt: new Date(),
       };
       if (existing) replacedStorageKey = existing.storageKey;
-      const [created] = existing
-        ? await transaction
-            .update(bookingIdentityDocuments)
-            .set(values)
-            .where(eq(bookingIdentityDocuments.id, existing.id))
-            .returning({
-              id: bookingIdentityDocuments.id,
-              documentType: bookingIdentityDocuments.documentType,
-              originalFilename: bookingIdentityDocuments.originalFilename,
-              verificationStatus: bookingIdentityDocuments.verificationStatus,
-            })
-        : await transaction
-            .insert(bookingIdentityDocuments)
-            .values(values)
-            .returning({
-              id: bookingIdentityDocuments.id,
-              documentType: bookingIdentityDocuments.documentType,
-              originalFilename: bookingIdentityDocuments.originalFilename,
-              verificationStatus: bookingIdentityDocuments.verificationStatus,
-            });
-      return created!;
+      const documentId = existing?.id ?? randomUUID();
+      if (existing) {
+        await transaction
+          .update(bookingIdentityDocuments)
+          .set(values)
+          .where(eq(bookingIdentityDocuments.id, existing.id));
+      } else {
+        await transaction.insert(bookingIdentityDocuments).values({
+          id: documentId,
+          ...values,
+        });
+      }
+      return {
+        id: documentId,
+        documentType,
+        originalFilename: stored.originalFilename,
+        verificationStatus: "pending" as const,
+      };
     });
     if (replacedStorageKey)
       await deletePrivateIdentityDocument(replacedStorageKey);

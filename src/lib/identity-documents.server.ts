@@ -145,17 +145,18 @@ export async function setBookingIdentityDocumentVerificationStatus(
   const actor = await requireActor();
   if (actor.role !== "admin")
     throw new IdentityAuthorizationError("Administrator access required.");
-  const [updated] = await db
+  const [existing] = await db
+    .select({ id: bookingIdentityDocuments.id })
+    .from(bookingIdentityDocuments)
+    .where(eq(bookingIdentityDocuments.id, documentId))
+    .limit(1);
+  if (!existing)
+    throw new IdentityAuthorizationError("Identity document not found.");
+  await db
     .update(bookingIdentityDocuments)
     .set({ verificationStatus: status, updatedAt: new Date() })
-    .where(eq(bookingIdentityDocuments.id, documentId))
-    .returning({
-      id: bookingIdentityDocuments.id,
-      verificationStatus: bookingIdentityDocuments.verificationStatus,
-    });
-  if (!updated)
-    throw new IdentityAuthorizationError("Identity document not found.");
-  return updated;
+    .where(eq(bookingIdentityDocuments.id, documentId));
+  return { id: documentId, verificationStatus: status };
 }
 
 export function isIdentityAuthorizationError(

@@ -1,14 +1,23 @@
 import { createServerFn } from "@tanstack/react-start";
-import { getRequestHeader, setResponseHeader } from "@tanstack/react-start/server";
+import {
+  getRequestHeader,
+  setResponseHeader,
+} from "@tanstack/react-start/server";
 import { eq, and, gt, isNull } from "drizzle-orm";
-import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
+import {
+  createHash,
+  randomBytes,
+  randomUUID,
+  scrypt as scryptCallback,
+  timingSafeEqual,
+} from "node:crypto";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { db } from "@/db";
 import { users } from "@/db/schema/users";
 import { sessions } from "@/db/schema/sessions";
 import { passwordResetTokens } from "@/db/schema/password-reset-tokens";
-import { isCountryCode } from "@/lib/countries";
+import { countryName, isCountryCode } from "@/lib/countries";
 
 const SESSION_COOKIE = "nepalheaven_session";
 const scrypt = promisify(scryptCallback);
@@ -25,25 +34,47 @@ const registerSchema = z.object({
   name: z.string().trim().min(2).max(120),
   email: z.string().trim().email(),
   password: z.string().min(8).max(200),
-  phone: z.string().trim().min(7).max(30).regex(/^\+?[0-9][0-9 ()-]{5,28}[0-9]$/),
-  country: z.string().trim().max(100).optional(),
-  nationality: z.string().trim().length(2).transform((value) => value.toUpperCase()).refine(isCountryCode),
-  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
-    const [year, month, day] = value.split("-").map(Number);
-    const date = new Date(Date.UTC(year!, month! - 1, day));
-    return year! >= 1900 && date.getUTCFullYear() === year && date.getUTCMonth() === month! - 1 && date.getUTCDate() === day && date <= new Date();
-  }),
+  phone: z
+    .string()
+    .trim()
+    .min(7)
+    .max(30)
+    .regex(/^\+?[0-9][0-9 ()-]{5,28}[0-9]$/),
+  nationality: z
+    .string()
+    .trim()
+    .length(2)
+    .transform((value) => value.toUpperCase())
+    .refine(isCountryCode),
+  dateOfBirth: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .refine((value) => {
+      const [year, month, day] = value.split("-").map(Number);
+      const date = new Date(Date.UTC(year!, month! - 1, day));
+      return (
+        year! >= 1900 &&
+        date.getUTCFullYear() === year &&
+        date.getUTCMonth() === month! - 1 &&
+        date.getUTCDate() === day &&
+        date <= new Date()
+      );
+    }),
 });
 
 function requireDb() {
-  if (!db) throw new Error("Database is not configured. Check DATABASE_URL in .env.");
+  if (!db)
+    throw new Error("Database is not configured. Check DATABASE_URL in .env.");
   return db;
 }
 
-
 async function hashPassword(password: string) {
   const salt = randomBytes(16).toString("hex");
-  const derived = (await scrypt(password, salt, 64, { N: 16384, r: 8, p: 1 })) as Buffer;
+  const derived = (await scrypt(password, salt, 64, {
+    N: 16384,
+    r: 8,
+    p: 1,
+  })) as Buffer;
   return `scrypt$${salt}$${derived.toString("hex")}`;
 }
 
@@ -51,8 +82,14 @@ async function verifyPassword(stored: string, password: string) {
   const [algorithm, salt, expectedHex] = stored.split("$");
   if (algorithm !== "scrypt" || !salt || !expectedHex) return false;
   const expected = Buffer.from(expectedHex, "hex");
-  const derived = (await scrypt(password, salt, expected.length, { N: 16384, r: 8, p: 1 })) as Buffer;
-  return expected.length === derived.length && timingSafeEqual(expected, derived);
+  const derived = (await scrypt(password, salt, expected.length, {
+    N: 16384,
+    r: 8,
+    p: 1,
+  })) as Buffer;
+  return (
+    expected.length === derived.length && timingSafeEqual(expected, derived)
+  );
 }
 
 function hashToken(token: string) {
@@ -101,7 +138,10 @@ function publicUser(user: typeof users.$inferSelect) {
 
 async function revokeUserSessions(userId: string) {
   const database = requireDb();
-  await database.update(sessions).set({ revokedAt: new Date() }).where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)));
+  await database
+    .update(sessions)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)));
 }
 
 async function createSession(userId: string) {
@@ -121,19 +161,35 @@ export const loginFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const database = requireDb();
     const email = data.email.toLowerCase();
-    const [user] = await database.select().from(users).where(eq(users.email, email)).limit(1);
+    const [user] = await database
+      .select()
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
 
-    if (!user) return { ok: false as const, message: "The email or password is incorrect." };
+    if (!user)
+      return {
+        ok: false as const,
+        message: "The email or password is incorrect.",
+      };
 
-    const passwordMatches = await verifyPassword(user.passwordHash, data.password);
-    if (!passwordMatches) return { ok: false as const, message: "The email or password is incorrect." };
+    const passwordMatches = await verifyPassword(
+      user.passwordHash,
+      data.password,
+    );
+    if (!passwordMatches)
+      return {
+        ok: false as const,
+        message: "The email or password is incorrect.",
+      };
 
     if (data.expectedRole && user.role !== data.expectedRole) {
       return {
         ok: false as const,
-        message: data.expectedRole === "admin"
-          ? "This account does not have administrator access."
-          : "Administrator accounts must sign in through /admin.",
+        message:
+          data.expectedRole === "admin"
+            ? "This account does not have administrator access."
+            : "Administrator accounts must sign in through /admin.",
       };
     }
 
@@ -147,81 +203,158 @@ export const registerFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const database = requireDb();
     const email = data.email.toLowerCase();
-    const [existing] = await database.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
-    if (existing) return { ok: false as const, message: "An account with this email already exists." };
+    const [existing] = await database
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+    if (existing)
+      return {
+        ok: false as const,
+        message: "An account with this email already exists.",
+      };
 
     const passwordHash = await hashPassword(data.password);
-    const [created] = await database.insert(users).values({
+    const userId = randomUUID();
+    const country = countryName(data.nationality);
+    if (!country)
+      return {
+        ok: false as const,
+        message: "Select a valid nationality.",
+      };
+    await database.insert(users).values({
+      id: userId,
       role: "customer",
       name: data.name,
       email,
       passwordHash,
       phone: data.phone.replace(/[ ()-]/g, ""),
-      country: data.country || null,
+      country,
       nationality: data.nationality,
       dateOfBirth: data.dateOfBirth,
-    }).returning();
+    });
+    const [created] = await database
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (!created) throw new Error("User insert could not be read back.");
 
     await createSession(created.id);
     return { ok: true as const, user: publicUser(created) };
   });
 
-export const getCurrentUserFn = createServerFn({ method: "GET" }).handler(async () => {
-  const token = readSessionToken();
-  if (!token) return null;
-  const database = requireDb();
-  const tokenHash = hashToken(token);
-  const now = new Date();
-  const [row] = await database
-    .select({ user: users, session: sessions })
-    .from(sessions)
-    .innerJoin(users, eq(sessions.userId, users.id))
-    .where(and(eq(sessions.tokenHash, tokenHash), isNull(sessions.revokedAt), gt(sessions.expiresAt, now)))
-    .limit(1);
+export const getCurrentUserFn = createServerFn({ method: "GET" }).handler(
+  async () => {
+    const token = readSessionToken();
+    if (!token) return null;
+    const database = requireDb();
+    const tokenHash = hashToken(token);
+    const now = new Date();
+    const [row] = await database
+      .select({ user: users, session: sessions })
+      .from(sessions)
+      .innerJoin(users, eq(sessions.userId, users.id))
+      .where(
+        and(
+          eq(sessions.tokenHash, tokenHash),
+          isNull(sessions.revokedAt),
+          gt(sessions.expiresAt, now),
+        ),
+      )
+      .limit(1);
 
-  if (!row) {
-    clearSessionCookie();
-    return null;
-  }
+    if (!row) {
+      clearSessionCookie();
+      return null;
+    }
 
-  return publicUser(row.user);
-});
+    return publicUser(row.user);
+  },
+);
 
 export const logoutFn = createServerFn({ method: "POST" }).handler(async () => {
   const token = readSessionToken();
   if (token && db) {
-    await db.update(sessions).set({ revokedAt: new Date() }).where(eq(sessions.tokenHash, hashToken(token)));
+    await db
+      .update(sessions)
+      .set({ revokedAt: new Date() })
+      .where(eq(sessions.tokenHash, hashToken(token)));
   }
   clearSessionCookie();
   return { ok: true };
 });
 
 export const updatePasswordFn = createServerFn({ method: "POST" })
-  .validator(z.object({ currentPassword: z.string().optional(), newPassword: z.string().min(8).max(200) }))
+  .validator(
+    z.object({
+      currentPassword: z.string().optional(),
+      newPassword: z.string().min(8).max(200),
+    }),
+  )
   .handler(async ({ data }) => {
     const token = readSessionToken();
-    if (!token) return { ok: false as const, message: "You are not signed in." };
+    if (!token)
+      return { ok: false as const, message: "You are not signed in." };
     const database = requireDb();
-    const [row] = await database.select({ user: users, session: sessions }).from(sessions).innerJoin(users, eq(sessions.userId, users.id)).where(and(eq(sessions.tokenHash, hashToken(token)), isNull(sessions.revokedAt), gt(sessions.expiresAt, new Date()))).limit(1);
-    if (!row) return { ok: false as const, message: "Your session has expired. Please sign in again." };
-    if (data.currentPassword && !(await verifyPassword(row.user.passwordHash, data.currentPassword))) return { ok: false as const, message: "The current password is incorrect." };
+    const [row] = await database
+      .select({ user: users, session: sessions })
+      .from(sessions)
+      .innerJoin(users, eq(sessions.userId, users.id))
+      .where(
+        and(
+          eq(sessions.tokenHash, hashToken(token)),
+          isNull(sessions.revokedAt),
+          gt(sessions.expiresAt, new Date()),
+        ),
+      )
+      .limit(1);
+    if (!row)
+      return {
+        ok: false as const,
+        message: "Your session has expired. Please sign in again.",
+      };
+    if (
+      data.currentPassword &&
+      !(await verifyPassword(row.user.passwordHash, data.currentPassword))
+    )
+      return {
+        ok: false as const,
+        message: "The current password is incorrect.",
+      };
     const passwordHash = await hashPassword(data.newPassword);
-    await database.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, row.user.id));
+    await database
+      .update(users)
+      .set({ passwordHash, updatedAt: new Date() })
+      .where(eq(users.id, row.user.id));
     await revokeUserSessions(row.user.id);
     clearSessionCookie();
-    return { ok: true as const, message: "Password updated. Please sign in again." };
+    return {
+      ok: true as const,
+      message: "Password updated. Please sign in again.",
+    };
   });
-
 
 export const requestPasswordResetFn = createServerFn({ method: "POST" })
   .validator(z.object({ email: z.string().trim().email() }))
   .handler(async ({ data }) => {
     const database = requireDb();
     const email = data.email.toLowerCase();
-    const [user] = await database.select().from(users).where(eq(users.email, email)).limit(1);
-    if (!user) return { ok: true as const, message: "If an account exists for this email, a reset link has been prepared." };
+    const [user] = await database
+      .select()
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+    if (!user)
+      return {
+        ok: true as const,
+        message:
+          "If an account exists for this email, a reset link has been prepared.",
+      };
 
-    await database.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, user.id));
+    await database
+      .delete(passwordResetTokens)
+      .where(eq(passwordResetTokens.userId, user.id));
     const token = randomBytes(32).toString("base64url");
     await database.insert(passwordResetTokens).values({
       userId: user.id,
@@ -233,28 +366,56 @@ export const requestPasswordResetFn = createServerFn({ method: "POST" })
     // so the existing frontend reset screen remains testable.
     return {
       ok: true as const,
-      message: "If an account exists for this email, a reset link has been prepared.",
+      message:
+        "If an account exists for this email, a reset link has been prepared.",
       devResetToken: process.env.NODE_ENV === "production" ? undefined : token,
     };
   });
 
 export const resetPasswordFn = createServerFn({ method: "POST" })
-  .validator(z.object({ token: z.string().min(20), password: z.string().min(8).max(200) }))
+  .validator(
+    z.object({
+      token: z.string().min(20),
+      password: z.string().min(8).max(200),
+    }),
+  )
   .handler(async ({ data }) => {
     const database = requireDb();
     const tokenHash = hashToken(data.token);
     const [reset] = await database
-      .select({ id: passwordResetTokens.id, userId: passwordResetTokens.userId })
+      .select({
+        id: passwordResetTokens.id,
+        userId: passwordResetTokens.userId,
+      })
       .from(passwordResetTokens)
-      .where(and(eq(passwordResetTokens.tokenHash, tokenHash), isNull(passwordResetTokens.usedAt), gt(passwordResetTokens.expiresAt, new Date())))
+      .where(
+        and(
+          eq(passwordResetTokens.tokenHash, tokenHash),
+          isNull(passwordResetTokens.usedAt),
+          gt(passwordResetTokens.expiresAt, new Date()),
+        ),
+      )
       .limit(1);
 
-    if (!reset) return { ok: false as const, message: "This password reset link is invalid or has expired." };
+    if (!reset)
+      return {
+        ok: false as const,
+        message: "This password reset link is invalid or has expired.",
+      };
 
     const passwordHash = await hashPassword(data.password);
-    await database.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, reset.userId));
-    await database.update(passwordResetTokens).set({ usedAt: new Date() }).where(eq(passwordResetTokens.id, reset.id));
+    await database
+      .update(users)
+      .set({ passwordHash, updatedAt: new Date() })
+      .where(eq(users.id, reset.userId));
+    await database
+      .update(passwordResetTokens)
+      .set({ usedAt: new Date() })
+      .where(eq(passwordResetTokens.id, reset.id));
     await revokeUserSessions(reset.userId);
     clearSessionCookie();
-    return { ok: true as const, message: "Your password has been updated. You can now sign in." };
+    return {
+      ok: true as const,
+      message: "Your password has been updated. You can now sign in.",
+    };
   });

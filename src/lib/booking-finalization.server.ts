@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import {
@@ -49,7 +49,8 @@ function sameMoney(left: string, right: string) {
   return moneyToCents(left) === moneyToCents(right);
 }
 
-function nepalDate(value: Date) {
+function nepalDate(value: Date | string) {
+  if (typeof value === "string") return value.slice(0, 10);
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Kathmandu",
     year: "numeric",
@@ -123,7 +124,8 @@ export async function finalizeBookingAfterVerifiedPayment(
         return {
           ...existing,
           paymentStatus:
-            moneyToCents(verifiedPayment.amount) >= moneyToCents(existing.total ?? "0")
+            moneyToCents(verifiedPayment.amount) >=
+            moneyToCents(existing.total ?? "0")
               ? ("paid" as const)
               : ("partially_paid" as const),
         };
@@ -186,7 +188,10 @@ export async function finalizeBookingAfterVerifiedPayment(
     if (
       !sameMoney(intent.subtotal, centsToMoney(recalculated.subtotalCents)) ||
       !sameMoney(intent.vatAmount, centsToMoney(recalculated.vatAmountCents)) ||
-      !sameMoney(intent.grandTotal, centsToMoney(recalculated.grandTotalCents)) ||
+      !sameMoney(
+        intent.grandTotal,
+        centsToMoney(recalculated.grandTotalCents),
+      ) ||
       !sameMoney(
         intent.minimumDepositAmount,
         centsToMoney(recalculated.minimumDepositCents),
@@ -213,9 +218,10 @@ export async function finalizeBookingAfterVerifiedPayment(
         "PAYMENT_INVALID",
         "Verified initial payment exceeds the checkout grand total.",
       );
-    const expectedPaidCents = intent.selectedPaymentOption === "full"
-      ? recalculated.grandTotalCents
-      : recalculated.minimumDepositCents;
+    const expectedPaidCents =
+      intent.selectedPaymentOption === "full"
+        ? recalculated.grandTotalCents
+        : recalculated.minimumDepositCents;
     if (paidCents !== expectedPaidCents)
       throw new BookingFinalizationError(
         "PAYMENT_INVALID",
@@ -224,50 +230,48 @@ export async function finalizeBookingAfterVerifiedPayment(
 
     const remainingCents = recalculated.grandTotalCents - paidCents;
     const departureDate = nepalDate(intent.departureDate);
-    const balanceDueDate = remainingCents > 0
-      ? calculateBalanceDueDate(departureDate, 0)
-      : null;
-    const [booking] = await transaction
-      .insert(bookings)
-      .values({
-        bookingReference: generateBookingReference(),
-        checkoutIntentId: intent.id,
-        userId: intent.userId,
-        packageId: intent.packageId,
-        packageTierId: intent.packageTierId,
-        departureDate: intent.departureDate,
-        travellers: intent.travellers,
-        status: "confirmed",
-        unitPriceSnapshot: intent.unitPriceSnapshot,
-        subtotal: intent.subtotal,
-        vatPercentageSnapshot: intent.vatPercentageSnapshot,
-        vatAmountSnapshot: intent.vatAmount,
-        total: intent.grandTotal,
-        minimumDepositPercentageSnapshot:
-          intent.minimumDepositPercentageSnapshot,
-        minimumDepositAmountSnapshot: intent.minimumDepositAmount,
-        initialPaymentOption: intent.selectedPaymentOption,
-        initialPaymentPercentageSnapshot: intent.selectedPaymentOption === "full"
+    const balanceDueDate =
+      remainingCents > 0 ? calculateBalanceDueDate(departureDate, 0) : null;
+    const bookingId = randomUUID();
+    const bookingReference = generateBookingReference();
+    await transaction.insert(bookings).values({
+      id: bookingId,
+      bookingReference,
+      checkoutIntentId: intent.id,
+      userId: intent.userId,
+      packageId: intent.packageId,
+      packageTierId: intent.packageTierId,
+      departureDate: intent.departureDate,
+      travellers: intent.travellers,
+      status: "confirmed",
+      unitPriceSnapshot: intent.unitPriceSnapshot,
+      subtotal: intent.subtotal,
+      vatPercentageSnapshot: intent.vatPercentageSnapshot,
+      vatAmountSnapshot: intent.vatAmount,
+      total: intent.grandTotal,
+      minimumDepositPercentageSnapshot: intent.minimumDepositPercentageSnapshot,
+      minimumDepositAmountSnapshot: intent.minimumDepositAmount,
+      initialPaymentOption: intent.selectedPaymentOption,
+      initialPaymentPercentageSnapshot:
+        intent.selectedPaymentOption === "full"
           ? "100.00"
           : intent.minimumDepositPercentageSnapshot,
-        amountInitiallyPaid: centsToMoney(paidCents),
-        remainingBalanceSnapshot: centsToMoney(remainingCents),
-        balanceDueDate,
-        cancellationFeePercentageSnapshot:
-          intent.cancellationFeePercentageSnapshot,
-        cancellationPolicySourceSnapshot:
-          intent.cancellationPolicySourceSnapshot,
-        currency: intent.currency,
-        notes: intent.notes,
-      })
-      .returning({
-        id: bookings.id,
-        reference: bookings.bookingReference,
-        status: bookings.status,
-        total: bookings.total,
-        currency: bookings.currency,
-      });
-    if (!booking) throw new Error("Booking insert did not return a row.");
+      amountInitiallyPaid: centsToMoney(paidCents),
+      remainingBalanceSnapshot: centsToMoney(remainingCents),
+      balanceDueDate,
+      cancellationFeePercentageSnapshot:
+        intent.cancellationFeePercentageSnapshot,
+      cancellationPolicySourceSnapshot: intent.cancellationPolicySourceSnapshot,
+      currency: intent.currency,
+      notes: intent.notes,
+    });
+    const booking = {
+      id: bookingId,
+      reference: bookingReference,
+      status: "confirmed" as const,
+      total: intent.grandTotal,
+      currency: intent.currency,
+    };
 
     await transaction.insert(bookingTravellers).values({
       bookingId: booking.id,
@@ -280,8 +284,7 @@ export async function finalizeBookingAfterVerifiedPayment(
     });
     await transaction.insert(payments).values({
       bookingId: booking.id,
-      purpose:
-        paidCents >= recalculated.grandTotalCents ? "full" : "deposit",
+      purpose: paidCents >= recalculated.grandTotalCents ? "full" : "deposit",
       amount: centsToMoney(paidCents),
       currency: verifiedPayment.currency,
       provider: verifiedPayment.provider.trim(),
@@ -294,12 +297,20 @@ export async function finalizeBookingAfterVerifiedPayment(
       }),
     });
     if (
-      intent.stagedDocumentType && intent.stagedDocumentStorageKey &&
-      intent.stagedDocumentOriginalFilename && intent.stagedDocumentMimeType &&
+      intent.stagedDocumentType &&
+      intent.stagedDocumentStorageKey &&
+      intent.stagedDocumentOriginalFilename &&
+      intent.stagedDocumentMimeType &&
       intent.stagedDocumentFileSize
     ) {
-      if (intent.stagedDocumentType !== "passport" && intent.stagedDocumentType !== "national_id")
-        throw new BookingFinalizationError("CHECKOUT_INVALID", "Checkout document type is invalid.");
+      if (
+        intent.stagedDocumentType !== "passport" &&
+        intent.stagedDocumentType !== "national_id"
+      )
+        throw new BookingFinalizationError(
+          "CHECKOUT_INVALID",
+          "Checkout document type is invalid.",
+        );
       await transaction.insert(bookingIdentityDocuments).values({
         bookingId: booking.id,
         userId: intent.userId,
@@ -313,7 +324,11 @@ export async function finalizeBookingAfterVerifiedPayment(
     }
     await transaction
       .update(bookingIntents)
-      .set({ status: "consumed", consumedAt: new Date(), updatedAt: new Date() })
+      .set({
+        status: "consumed",
+        consumedAt: new Date(),
+        updatedAt: new Date(),
+      })
       .where(eq(bookingIntents.id, intent.id));
 
     return {

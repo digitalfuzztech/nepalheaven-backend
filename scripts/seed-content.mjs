@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import postgres from "postgres";
+import mysql from "mysql2/promise";
 import ts from "typescript";
 
 const connectionString = process.env.DATABASE_URL;
@@ -10,11 +10,61 @@ if (!connectionString) {
   console.error("DATABASE_URL is missing. Configure .env first.");
   process.exit(1);
 }
+if (!/^mysql:\/\//i.test(connectionString)) {
+  console.error("DATABASE_URL must use the mysql:// scheme.");
+  process.exit(1);
+}
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sourcePath = resolve(projectRoot, "src/lib/site-data.ts");
 const manifestKey = "seed.nepal-heaven.manifest.v1";
 const stableNamespace = "nepal-heaven-static-content-v1";
+
+function createSqlClient(connection) {
+  const execute = async (strings, values) => {
+    let statement = "";
+    const parameters = [];
+    for (let index = 0; index < strings.length; index += 1) {
+      statement += strings[index];
+      if (index >= values.length) continue;
+      const value = values[index];
+      if (value?.kind === "identifier") {
+        if (!/^[a-z_][a-z0-9_]*$/i.test(value.value))
+          throw new Error(`Unsafe SQL identifier: ${value.value}`);
+        statement += `\`${value.value}\``;
+      } else if (value?.kind === "array") {
+        if (!value.value.length) throw new Error("SQL array cannot be empty.");
+        statement += `(${value.value.map(() => "?").join(", ")})`;
+        parameters.push(...value.value);
+      } else {
+        statement += "?";
+        parameters.push(value);
+      }
+    }
+    statement = statement.trim();
+    const [result] = await connection.query(statement, parameters);
+    return result;
+  };
+  const tag = (strings, ...values) => {
+    if (typeof strings === "string")
+      return { kind: "identifier", value: strings };
+    return execute(strings, values);
+  };
+  tag.array = (value) => ({ kind: "array", value });
+  tag.begin = async (callback) => {
+    await connection.beginTransaction();
+    try {
+      const result = await callback(tag);
+      await connection.commit();
+      return result;
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    }
+  };
+  tag.end = () => connection.end();
+  return tag;
+}
 
 function stableUuid(key) {
   const bytes = Buffer.from(
@@ -110,9 +160,9 @@ function addManifestId(manifest, table, id) {
 async function upsertSetting(tx, key, value, manifest) {
   const id = stableUuid(`site_settings:${key}`);
   await tx`
-    INSERT INTO site_settings (id, key, value, updated_at)
+    INSERT INTO site_settings (id, \`key\`, value, updated_at)
     VALUES (${id}, ${key}, ${JSON.stringify(value)}, NOW())
-    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+    ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = NOW()
   `;
   manifest.settingKeys.push(key);
 }
@@ -158,7 +208,7 @@ async function synchronizeManifestRows(tx, previousManifest, currentManifest) {
     const currentIds = new Set(currentManifest.tables[table] ?? []);
     const staleIds = previousIds.filter((id) => !currentIds.has(id));
     if (staleIds.length) {
-      await tx`DELETE FROM ${tx(table)} WHERE id = ANY(${tx.array(staleIds, "uuid")})`;
+      await tx`DELETE FROM ${tx(table)} WHERE id IN ${tx.array(staleIds)}`;
     }
   }
 
@@ -167,17 +217,21 @@ async function synchronizeManifestRows(tx, previousManifest, currentManifest) {
     (key) => !currentSettingKeys.has(key),
   );
   if (staleSettingKeys.length) {
-    await tx`DELETE FROM site_settings WHERE key = ANY(${tx.array(staleSettingKeys, "text")})`;
+    await tx`DELETE FROM site_settings WHERE \`key\` IN ${tx.array(staleSettingKeys)}`;
   }
 }
 
 const { data, assetImportCount } = await loadSiteData();
-const sql = postgres(connectionString, { prepare: false });
+const connection = await mysql.createConnection({
+  uri: connectionString,
+  timezone: "Z",
+});
+const sql = createSqlClient(connection);
 
 try {
   const summary = await sql.begin(async (tx) => {
     const previousManifestRows =
-      await tx`SELECT value FROM site_settings WHERE key = ${manifestKey} LIMIT 1`;
+      await tx`SELECT value FROM site_settings WHERE \`key\` = ${manifestKey} LIMIT 1`;
     const previousManifest = previousManifestRows.length
       ? JSON.parse(previousManifestRows[0].value ?? "{}")
       : {};
@@ -190,10 +244,13 @@ try {
     const destinationIds = new Map();
     const packageIds = new Map();
 
-    for (const [destinationSortOrder, destination] of data.destinations.entries()) {
+    for (const [
+      destinationSortOrder,
+      destination,
+    ] of data.destinations.entries()) {
       const id = stableUuid(`destinations:${destination.slug}`);
       const altitude = parseAltitude(destination.altitude);
-      const [row] = await tx`
+      await tx`
         INSERT INTO destinations (
           id, name, slug, short_description, description, hero_image, region, category,
           difficulty, duration, altitude_label, min_altitude, max_altitude, elevation,
@@ -204,26 +261,30 @@ try {
           ${destination.duration}, ${destination.altitude}, ${altitude.min}, ${altitude.max}, ${altitude.max},
           ${destination.season}, ${destinationSortOrder}, true, NOW()
         )
-        ON CONFLICT (slug) DO UPDATE SET
-          name = EXCLUDED.name,
-          short_description = EXCLUDED.short_description,
-          description = EXCLUDED.description,
-          hero_image = EXCLUDED.hero_image,
-          region = EXCLUDED.region,
-          category = EXCLUDED.category,
-          difficulty = EXCLUDED.difficulty,
-          duration = EXCLUDED.duration,
-          altitude_label = EXCLUDED.altitude_label,
-          min_altitude = EXCLUDED.min_altitude,
-          max_altitude = EXCLUDED.max_altitude,
-          elevation = EXCLUDED.elevation,
-          best_season = EXCLUDED.best_season,
-          sort_order = EXCLUDED.sort_order,
+        ON DUPLICATE KEY UPDATE
+          name = VALUES(name),
+          short_description = VALUES(short_description),
+          description = VALUES(description),
+          hero_image = VALUES(hero_image),
+          region = VALUES(region),
+          category = VALUES(category),
+          difficulty = VALUES(difficulty),
+          duration = VALUES(duration),
+          altitude_label = VALUES(altitude_label),
+          min_altitude = VALUES(min_altitude),
+          max_altitude = VALUES(max_altitude),
+          elevation = VALUES(elevation),
+          best_season = VALUES(best_season),
+          sort_order = VALUES(sort_order),
           status = true,
           updated_at = NOW()
-        RETURNING id
       `;
-      destinationIds.set(destination.slug, row.id);
+      const [destinationRow] = await tx`
+        SELECT id FROM destinations WHERE slug = ${destination.slug} LIMIT 1
+      `;
+      if (!destinationRow)
+        throw new Error(`Destination upsert failed: ${destination.slug}`);
+      destinationIds.set(destination.slug, destinationRow.id);
 
       for (const [index, item] of destination.highlights.entries()) {
         const childId = stableUuid(
@@ -232,8 +293,8 @@ try {
         addManifestId(manifest, "destination_highlights", childId);
         await tx`
           INSERT INTO destination_highlights (id, destination_id, item, sort_order)
-          VALUES (${childId}, ${row.id}, ${item}, ${index})
-          ON CONFLICT (id) DO UPDATE SET destination_id = EXCLUDED.destination_id, item = EXCLUDED.item, sort_order = EXCLUDED.sort_order
+          VALUES (${childId}, ${destinationRow.id}, ${item}, ${index})
+          ON DUPLICATE KEY UPDATE destination_id = VALUES(destination_id), item = VALUES(item), sort_order = VALUES(sort_order)
         `;
       }
       for (const [index, item] of destination.tips.entries()) {
@@ -243,8 +304,8 @@ try {
         addManifestId(manifest, "destination_tips", childId);
         await tx`
           INSERT INTO destination_tips (id, destination_id, item, sort_order)
-          VALUES (${childId}, ${row.id}, ${item}, ${index})
-          ON CONFLICT (id) DO UPDATE SET destination_id = EXCLUDED.destination_id, item = EXCLUDED.item, sort_order = EXCLUDED.sort_order
+          VALUES (${childId}, ${destinationRow.id}, ${item}, ${index})
+          ON DUPLICATE KEY UPDATE destination_id = VALUES(destination_id), item = VALUES(item), sort_order = VALUES(sort_order)
         `;
       }
       for (const [index, item] of destination.itinerary.entries()) {
@@ -254,13 +315,13 @@ try {
         addManifestId(manifest, "destination_itineraries", childId);
         await tx`
           INSERT INTO destination_itineraries (id, destination_id, day_label, title, description, sort_order)
-          VALUES (${childId}, ${row.id}, ${item.day}, ${item.title}, ${item.detail}, ${index})
-          ON CONFLICT (id) DO UPDATE SET
-            destination_id = EXCLUDED.destination_id,
-            day_label = EXCLUDED.day_label,
-            title = EXCLUDED.title,
-            description = EXCLUDED.description,
-            sort_order = EXCLUDED.sort_order
+          VALUES (${childId}, ${destinationRow.id}, ${item.day}, ${item.title}, ${item.detail}, ${index})
+          ON DUPLICATE KEY UPDATE
+            destination_id = VALUES(destination_id),
+            day_label = VALUES(day_label),
+            title = VALUES(title),
+            description = VALUES(description),
+            sort_order = VALUES(sort_order)
         `;
       }
       for (const [index, item] of destination.included.entries()) {
@@ -270,8 +331,8 @@ try {
         addManifestId(manifest, "destination_inclusions", childId);
         await tx`
           INSERT INTO destination_inclusions (id, destination_id, item, sort_order)
-          VALUES (${childId}, ${row.id}, ${item}, ${index})
-          ON CONFLICT (id) DO UPDATE SET destination_id = EXCLUDED.destination_id, item = EXCLUDED.item, sort_order = EXCLUDED.sort_order
+          VALUES (${childId}, ${destinationRow.id}, ${item}, ${index})
+          ON DUPLICATE KEY UPDATE destination_id = VALUES(destination_id), item = VALUES(item), sort_order = VALUES(sort_order)
         `;
       }
       for (const [index, item] of destination.excluded.entries()) {
@@ -281,8 +342,8 @@ try {
         addManifestId(manifest, "destination_exclusions", childId);
         await tx`
           INSERT INTO destination_exclusions (id, destination_id, item, sort_order)
-          VALUES (${childId}, ${row.id}, ${item}, ${index})
-          ON CONFLICT (id) DO UPDATE SET destination_id = EXCLUDED.destination_id, item = EXCLUDED.item, sort_order = EXCLUDED.sort_order
+          VALUES (${childId}, ${destinationRow.id}, ${item}, ${index})
+          ON DUPLICATE KEY UPDATE destination_id = VALUES(destination_id), item = VALUES(item), sort_order = VALUES(sort_order)
         `;
       }
     }
@@ -307,7 +368,7 @@ try {
       const primaryDestinationId = primarySlug
         ? destinationIds.get(primarySlug)
         : null;
-      const [row] = await tx`
+      await tx`
         INSERT INTO packages (
           id, destination_id, destination_label, title, slug, style, short_description,
           days, difficulty, starting_price, old_price, currency, rating, review_count,
@@ -318,26 +379,30 @@ try {
           ${packageDifficulty(packageItem.difficulty)}, ${packageItem.price}, ${packageItem.oldPrice ?? null},
           'USD', ${packageItem.rating}, ${packageItem.reviews}, ${packageItem.image}, ${packageSortOrder}, true, NOW()
         )
-        ON CONFLICT (slug) DO UPDATE SET
-          destination_id = EXCLUDED.destination_id,
-          destination_label = EXCLUDED.destination_label,
-          title = EXCLUDED.title,
-          style = EXCLUDED.style,
-          short_description = EXCLUDED.short_description,
-          days = EXCLUDED.days,
-          difficulty = EXCLUDED.difficulty,
-          starting_price = EXCLUDED.starting_price,
-          old_price = EXCLUDED.old_price,
-          currency = EXCLUDED.currency,
-          rating = EXCLUDED.rating,
-          review_count = EXCLUDED.review_count,
-          hero_image = EXCLUDED.hero_image,
-          sort_order = EXCLUDED.sort_order,
+        ON DUPLICATE KEY UPDATE
+          destination_id = VALUES(destination_id),
+          destination_label = VALUES(destination_label),
+          title = VALUES(title),
+          style = VALUES(style),
+          short_description = VALUES(short_description),
+          days = VALUES(days),
+          difficulty = VALUES(difficulty),
+          starting_price = VALUES(starting_price),
+          old_price = VALUES(old_price),
+          currency = VALUES(currency),
+          rating = VALUES(rating),
+          review_count = VALUES(review_count),
+          hero_image = VALUES(hero_image),
+          sort_order = VALUES(sort_order),
           status = true,
           updated_at = NOW()
-        RETURNING id
       `;
-      packageIds.set(packageItem.slug, row.id);
+      const [packageRow] = await tx`
+        SELECT id FROM packages WHERE slug = ${packageItem.slug} LIMIT 1
+      `;
+      if (!packageRow)
+        throw new Error(`Package upsert failed: ${packageItem.slug}`);
+      packageIds.set(packageItem.slug, packageRow.id);
 
       for (const [index, destinationSlug] of relatedSlugs.entries()) {
         const destinationId = destinationIds.get(destinationSlug);
@@ -349,8 +414,8 @@ try {
         addManifestId(manifest, "package_destinations", childId);
         await tx`
           INSERT INTO package_destinations (id, package_id, destination_id, sort_order)
-          VALUES (${childId}, ${row.id}, ${destinationId}, ${index})
-          ON CONFLICT (package_id, destination_id) DO UPDATE SET sort_order = EXCLUDED.sort_order
+          VALUES (${childId}, ${packageRow.id}, ${destinationId}, ${index})
+          ON DUPLICATE KEY UPDATE sort_order = VALUES(sort_order)
         `;
       }
       for (const [index, item] of packageItem.highlights.entries()) {
@@ -360,8 +425,8 @@ try {
         addManifestId(manifest, "package_highlights", childId);
         await tx`
           INSERT INTO package_highlights (id, package_id, item, sort_order)
-          VALUES (${childId}, ${row.id}, ${item}, ${index})
-          ON CONFLICT (id) DO UPDATE SET package_id = EXCLUDED.package_id, item = EXCLUDED.item, sort_order = EXCLUDED.sort_order
+          VALUES (${childId}, ${packageRow.id}, ${item}, ${index})
+          ON DUPLICATE KEY UPDATE package_id = VALUES(package_id), item = VALUES(item), sort_order = VALUES(sort_order)
         `;
       }
       for (const [index, item] of packageItem.tiers.entries()) {
@@ -371,14 +436,14 @@ try {
         addManifestId(manifest, "package_tiers", childId);
         await tx`
           INSERT INTO package_tiers (id, package_id, name, description, price, currency, sort_order)
-          VALUES (${childId}, ${row.id}, ${item.name}, ${item.note}, ${item.price}, 'USD', ${index})
-          ON CONFLICT (id) DO UPDATE SET
-            package_id = EXCLUDED.package_id,
-            name = EXCLUDED.name,
-            description = EXCLUDED.description,
-            price = EXCLUDED.price,
-            currency = EXCLUDED.currency,
-            sort_order = EXCLUDED.sort_order
+          VALUES (${childId}, ${packageRow.id}, ${item.name}, ${item.note}, ${item.price}, 'USD', ${index})
+          ON DUPLICATE KEY UPDATE
+            package_id = VALUES(package_id),
+            name = VALUES(name),
+            description = VALUES(description),
+            price = VALUES(price),
+            currency = VALUES(currency),
+            sort_order = VALUES(sort_order)
         `;
       }
       for (const [index, item] of packageItem.itinerary.entries()) {
@@ -388,14 +453,14 @@ try {
         addManifestId(manifest, "package_itineraries", childId);
         await tx`
           INSERT INTO package_itineraries (id, package_id, day, day_label, title, description, sort_order)
-          VALUES (${childId}, ${row.id}, NULL, ${item.day}, ${item.title}, ${item.detail}, ${index})
-          ON CONFLICT (id) DO UPDATE SET
-            package_id = EXCLUDED.package_id,
+          VALUES (${childId}, ${packageRow.id}, NULL, ${item.day}, ${item.title}, ${item.detail}, ${index})
+          ON DUPLICATE KEY UPDATE
+            package_id = VALUES(package_id),
             day = NULL,
-            day_label = EXCLUDED.day_label,
-            title = EXCLUDED.title,
-            description = EXCLUDED.description,
-            sort_order = EXCLUDED.sort_order
+            day_label = VALUES(day_label),
+            title = VALUES(title),
+            description = VALUES(description),
+            sort_order = VALUES(sort_order)
         `;
       }
       for (const [index, item] of packageItem.included.entries()) {
@@ -405,8 +470,8 @@ try {
         addManifestId(manifest, "package_inclusions", childId);
         await tx`
           INSERT INTO package_inclusions (id, package_id, item, sort_order)
-          VALUES (${childId}, ${row.id}, ${item}, ${index})
-          ON CONFLICT (id) DO UPDATE SET package_id = EXCLUDED.package_id, item = EXCLUDED.item, sort_order = EXCLUDED.sort_order
+          VALUES (${childId}, ${packageRow.id}, ${item}, ${index})
+          ON DUPLICATE KEY UPDATE package_id = VALUES(package_id), item = VALUES(item), sort_order = VALUES(sort_order)
         `;
       }
       for (const [index, item] of packageItem.excluded.entries()) {
@@ -416,8 +481,8 @@ try {
         addManifestId(manifest, "package_exclusions", childId);
         await tx`
           INSERT INTO package_exclusions (id, package_id, item, sort_order)
-          VALUES (${childId}, ${row.id}, ${item}, ${index})
-          ON CONFLICT (id) DO UPDATE SET package_id = EXCLUDED.package_id, item = EXCLUDED.item, sort_order = EXCLUDED.sort_order
+          VALUES (${childId}, ${packageRow.id}, ${item}, ${index})
+          ON DUPLICATE KEY UPDATE package_id = VALUES(package_id), item = VALUES(item), sort_order = VALUES(sort_order)
         `;
       }
     }
@@ -429,13 +494,16 @@ try {
       const slug = slugify(categoryName);
       const id = stableUuid(`blog_categories:${slug}`);
       addManifestId(manifest, "blog_categories", id);
-      const [row] = await tx`
+      await tx`
         INSERT INTO blog_categories (id, name, slug)
         VALUES (${id}, ${categoryName}, ${slug})
-        ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
-        RETURNING id
+        ON DUPLICATE KEY UPDATE name = VALUES(name)
       `;
-      categoryIds.set(categoryName, row.id);
+      const [categoryRow] = await tx`
+        SELECT id FROM blog_categories WHERE slug = ${slug} LIMIT 1
+      `;
+      if (!categoryRow) throw new Error(`Blog category upsert failed: ${slug}`);
+      categoryIds.set(categoryName, categoryRow.id);
     }
 
     for (const post of data.posts) {
@@ -453,22 +521,25 @@ try {
           ${post.body.join("\n\n")}, ${post.image}, ${post.author.name}, ${post.author.role},
           ${readingTimeMinutes}, 'published', ${parsePublishedAt(post.date)}, NOW()
         )
-        ON CONFLICT (slug) DO UPDATE SET
-          category_id = EXCLUDED.category_id,
-          title = EXCLUDED.title,
-          excerpt = EXCLUDED.excerpt,
-          content = EXCLUDED.content,
-          cover_image = EXCLUDED.cover_image,
-          author_name = EXCLUDED.author_name,
-          author_role = EXCLUDED.author_role,
-          reading_time_minutes = EXCLUDED.reading_time_minutes,
-          status = EXCLUDED.status,
-          published_at = EXCLUDED.published_at,
+        ON DUPLICATE KEY UPDATE
+          category_id = VALUES(category_id),
+          title = VALUES(title),
+          excerpt = VALUES(excerpt),
+          content = VALUES(content),
+          cover_image = VALUES(cover_image),
+          author_name = VALUES(author_name),
+          author_role = VALUES(author_role),
+          reading_time_minutes = VALUES(reading_time_minutes),
+          status = VALUES(status),
+          published_at = VALUES(published_at),
           updated_at = NOW()
       `;
     }
 
-    for (const [testimonialSortOrder, testimonial] of data.testimonials.entries()) {
+    for (const [
+      testimonialSortOrder,
+      testimonial,
+    ] of data.testimonials.entries()) {
       const id = stableUuid(
         `testimonials:${testimonial.name}:${testimonial.trip}`,
       );
@@ -476,14 +547,14 @@ try {
       await tx`
         INSERT INTO testimonials (id, name, location, content, rating, trip_name, sort_order, status, updated_at)
         VALUES (${id}, ${testimonial.name}, ${testimonial.country}, ${testimonial.quote}, ${String(testimonial.rating)}, ${testimonial.trip}, ${testimonialSortOrder}, 'published', NOW())
-        ON CONFLICT (id) DO UPDATE SET
-          name = EXCLUDED.name,
-          location = EXCLUDED.location,
-          content = EXCLUDED.content,
-          rating = EXCLUDED.rating,
-          trip_name = EXCLUDED.trip_name,
-          sort_order = EXCLUDED.sort_order,
-          status = EXCLUDED.status,
+        ON DUPLICATE KEY UPDATE
+          name = VALUES(name),
+          location = VALUES(location),
+          content = VALUES(content),
+          rating = VALUES(rating),
+          trip_name = VALUES(trip_name),
+          sort_order = VALUES(sort_order),
+          status = VALUES(status),
           updated_at = NOW()
       `;
     }
@@ -495,13 +566,13 @@ try {
         addManifestId(manifest, "faqs", id);
         await tx`
           INSERT INTO faqs (id, question, answer, category, sort_order, status)
-          VALUES (${id}, ${item.q}, ${item.a}, ${group.category}, ${String(faqSortOrder)}, 'published')
-          ON CONFLICT (id) DO UPDATE SET
-            question = EXCLUDED.question,
-            answer = EXCLUDED.answer,
-            category = EXCLUDED.category,
-            sort_order = EXCLUDED.sort_order,
-            status = EXCLUDED.status
+          VALUES (${id}, ${item.q}, ${item.a}, ${group.category}, ${faqSortOrder}, 'published')
+          ON DUPLICATE KEY UPDATE
+            question = VALUES(question),
+            answer = VALUES(answer),
+            category = VALUES(category),
+            sort_order = VALUES(sort_order),
+            status = VALUES(status)
         `;
         faqSortOrder += 1;
       }
@@ -521,15 +592,21 @@ try {
       ["about.partners", data.partners],
       ["home.why_us", data.whyUs],
       ["assets.images", data.images],
+      ["booking.vat_enabled", false],
+      ["booking.vat_percentage", 0],
+      ["booking.minimum_deposit_percentage", 60],
+      ["booking.minimum_advance_percentage", 60],
+      ["booking.balance_due_days_before_departure", 0],
+      ["booking.default_cancellation_fee_percentage", 0],
     ];
     for (const [key, value] of settings)
       await upsertSetting(tx, key, value, manifest);
 
     await synchronizeManifestRows(tx, previousManifest, manifest);
     await tx`
-      INSERT INTO site_settings (id, key, value, updated_at)
+      INSERT INTO site_settings (id, \`key\`, value, updated_at)
       VALUES (${stableUuid(`site_settings:${manifestKey}`)}, ${manifestKey}, ${JSON.stringify(manifest)}, NOW())
-      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+      ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = NOW()
     `;
 
     return {

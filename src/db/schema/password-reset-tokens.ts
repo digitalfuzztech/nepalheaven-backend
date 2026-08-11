@@ -1,18 +1,28 @@
-import { index, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { index, mysqlTable, varchar } from "drizzle-orm/mysql-core";
 import { users } from "./users";
+import {
+  defaultMomentColumn,
+  momentColumn,
+  uuidColumn,
+  uuidPrimaryColumn,
+} from "./columns";
 
-export const passwordResetTokens = pgTable(
+export const passwordResetTokens = mysqlTable(
   "password_reset_tokens",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-    tokenHash: text("token_hash").notNull().unique(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    usedAt: timestamp("used_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    id: uuidPrimaryColumn("id").primaryKey(),
+    userId: uuidColumn("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: varchar("token_hash", { length: 64 }).notNull().unique(),
+    expiresAt: momentColumn("expires_at").notNull(),
+    usedAt: momentColumn("used_at"),
+    createdAt: defaultMomentColumn("created_at").notNull(),
   },
   (table) => ({
     userIdIdx: index("password_reset_tokens_user_id_idx").on(table.userId),
-    expiresAtIdx: index("password_reset_tokens_expires_at_idx").on(table.expiresAt),
+    expiresAtIdx: index("password_reset_tokens_expires_at_idx").on(
+      table.expiresAt,
+    ),
   }),
 );
