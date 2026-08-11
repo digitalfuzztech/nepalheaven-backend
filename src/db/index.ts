@@ -2,6 +2,7 @@ import { createPool } from "mysql2/promise";
 import { drizzle } from "drizzle-orm/mysql2";
 
 const connectionString = process.env["DATABASE_URL"];
+const socketPath = process.env["DB_SOCKET_PATH"]?.trim();
 
 if (connectionString && !/^mysql:\/\//i.test(connectionString)) {
   throw new Error("DATABASE_URL must use the mysql:// scheme.");
@@ -14,12 +15,33 @@ if (!connectionString && typeof window === "undefined") {
   );
 }
 
+function socketConnectionOptions(uri: string, path: string) {
+  const parsed = new URL(uri);
+  const database = decodeURIComponent(parsed.pathname.replace(/^\//, ""));
+  if (!database) {
+    throw new Error("DATABASE_URL must include a database name.");
+  }
+
+  return {
+    socketPath: path,
+    user: decodeURIComponent(parsed.username),
+    password: decodeURIComponent(parsed.password),
+    database,
+    connectionLimit: 10,
+    timezone: "Z",
+  };
+}
+
 const pool = connectionString
-  ? createPool({
-      uri: connectionString,
-      connectionLimit: 10,
-      timezone: "Z",
-    })
+  ? createPool(
+      socketPath
+        ? socketConnectionOptions(connectionString, socketPath)
+        : {
+            uri: connectionString,
+            connectionLimit: 10,
+            timezone: "Z",
+          },
+    )
   : null;
 
 // Relational Query Builder v1 emits either LATERAL joins (default mode) or
