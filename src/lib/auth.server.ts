@@ -370,7 +370,9 @@ export async function requestPasswordResetForRole(
       ),
     );
   const token = randomBytes(32).toString("base64url");
+  const resetId = randomBytes(18).toString("base64url");
   await database.insert(passwordResetTokens).values({
+    id: resetId,
     userId: user.id,
     tokenHash: hashToken(token),
     expiresAt: new Date(Date.now() + 30 * 60 * 1000),
@@ -387,6 +389,7 @@ export async function requestPasswordResetForRole(
       role === "admin" ? "admin_password_reset" : "customer_password_reset",
     to: user.email,
     sensitiveBody: true,
+    eventId: resetId,
     variables: {
       customerName: user.name,
       resetUrl: buildAppUrl(resetPath),

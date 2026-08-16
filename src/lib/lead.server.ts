@@ -393,6 +393,7 @@ async function sendLeadEmails(
           templateKey: "newsletter_admin_notification",
           to: mailRouting.general.internalRecipient,
           variables,
+          replyTo: result.email,
         }),
       ]);
     }

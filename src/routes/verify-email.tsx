@@ -24,17 +24,17 @@ function VerifyEmailPage() {
   const [code, setCode] = useState("");
   const [message, setMessage] = useState(() => {
     if (notice === "unverified_login_sent")
-      return "Your email hasn't been verified yet. We've sent you a new verification code.";
+      return "Your email hasn't been verified yet. We're sending you a new verification code.";
     if (notice === "unverified_login_cooldown")
       return "Your email hasn't been verified yet. Check your inbox for the current code or use Resend Code when available.";
     if (notice === "pending_registration_sent")
-      return "An account with this email is awaiting verification. We've sent you a new verification code.";
+      return "An account with this email is awaiting verification. We're sending you a new verification code.";
     if (notice === "pending_registration_cooldown")
       return "An account with this email is awaiting verification. Check your inbox for the current code or use Resend Code when available.";
     if (notice === "send_failed")
       return "Your account was created, but we couldn't send the verification email. Please use Resend Code.";
     if (notice === "sent")
-      return "Your verification code has been sent to your email.";
+      return "We're sending a verification code to your email.";
     return "";
   });
   const [error, setError] = useState("");
@@ -99,7 +99,7 @@ function VerifyEmailPage() {
         </h2>
         {address ? (
           <p className="mt-3 text-sm text-muted-foreground">
-            Your verification code was sent to: <strong>{address}</strong>
+            Your verification code is being sent to: <strong>{address}</strong>
           </p>
         ) : null}
         {error ? (

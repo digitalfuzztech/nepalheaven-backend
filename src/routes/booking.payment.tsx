@@ -185,12 +185,26 @@ function PaymentChoicePage() {
                 {error}
               </p>
             ) : null}
+            {busy ? (
+              <div
+                role="status"
+                className="mt-5 rounded-2xl border border-gold/25 bg-gold/5 px-4 py-3"
+              >
+                <p className="text-sm font-semibold text-primary">
+                  Processing Payment
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Your payment is being securely verified. Please don&apos;t
+                  close this page.
+                </p>
+              </div>
+            ) : null}
             <button
               disabled={busy}
               className="mt-7 h-13 w-full rounded-2xl bg-primary px-6 text-sm font-bold text-primary-foreground disabled:opacity-60"
             >
               {busy
-                ? "Processing development payment..."
+                ? "Processing Payment..."
                 : `Pay ${money(checkout.selectedPaymentAmount, checkout.currency)}`}
             </button>
           </form>

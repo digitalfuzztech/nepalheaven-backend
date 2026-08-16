@@ -9,6 +9,8 @@ import { users } from "@/db/schema/users";
 import { sendTemplatedEmail } from "@/lib/email.server";
 import { buildAppUrl, getAppUrl } from "@/lib/app-url.server";
 import { getMailRouting } from "@/lib/mail-routing.server";
+import { createBookingInvoicePdf } from "@/lib/booking-invoice.server";
+import type { EmailAttachment } from "@/lib/email.server";
 
 type BookingTemplateKey =
   | "booking_customer_confirmation"
@@ -135,6 +137,7 @@ async function sendBookingEmailOnce(input: {
   to: string;
   replyTo?: string;
   variables: MailVariables;
+  attachments?: EmailAttachment[];
 }) {
   if (!db) return { status: "failed" as const, reason: "Database unavailable" };
   const interactionId = deterministicInteractionId(
@@ -165,6 +168,12 @@ async function sendBookingEmailOnce(input: {
         templateKey: input.templateKey,
         mailRoute: expectedRoute.key,
         replyTo: input.replyTo || expectedRoute.replyTo,
+        attachments:
+          input.attachments?.map((attachment) => ({
+            filename: attachment.filename,
+            contentType: attachment.contentType,
+            size: attachment.content.length,
+          })) ?? [],
       }),
     })
     .onDuplicateKeyUpdate({ set: { id: sql`${leadInteractions.id}` } });
@@ -192,6 +201,7 @@ async function sendBookingEmailOnce(input: {
       to: input.to,
       variables: input.variables,
       ...(input.replyTo ? { replyTo: input.replyTo } : {}),
+      ...(input.attachments ? { attachments: input.attachments } : {}),
     });
     await db
       .update(leadInteractions)
@@ -216,6 +226,7 @@ async function sendBookingEmailOnce(input: {
           mailRoute: sent.route,
           replyTo: sent.replyTo,
           fromNameAndAddress: sent.from,
+          attachments: sent.attachments,
         }),
       })
       .where(eq(leadInteractions.id, interactionId));
@@ -342,6 +353,28 @@ export async function sendBookingConfirmationEmails(bookingId: string) {
   };
   const adminTo = getMailRouting().bookings.internalRecipient;
   const adminReplyTo = validReplyAddress(customerEmail);
+  const invoice = createBookingInvoicePdf({
+    bookingReference: snapshot.bookingReference,
+    paymentReference: payment.providerTransactionId || "Not provided",
+    invoiceDate: formatDate(payment.paidAt || snapshot.bookingCreatedAt),
+    customerName,
+    customerEmail,
+    customerPhone,
+    customerCountry,
+    packageName: snapshot.packageName,
+    tierName: snapshot.tierName || "Not specified",
+    destinationName: snapshot.destinationName || "Not specified",
+    startDate: formatDate(snapshot.departureDate),
+    endDate: "Not specified",
+    travellers: snapshot.travellers,
+    currency: snapshot.currency,
+    grandTotal: formatMoney(snapshot.grandTotal),
+    paymentType,
+    amountPaid: formatMoney(snapshot.amountPaid || payment.amount),
+    remainingBalance: formatMoney(snapshot.remainingBalance),
+    paymentStatus,
+    paymentMethod: getPaymentMethodLabel(payment.provider),
+  });
   return Promise.all([
     sendBookingEmailOnce({
       bookingId,
@@ -351,6 +384,7 @@ export async function sendBookingConfirmationEmails(bookingId: string) {
       templateKey: "booking_customer_confirmation",
       interactionType: "booking_confirmation",
       to: customerEmail,
+      attachments: [invoice],
       variables: { ...variables, bookingUrl: customerBookingUrl },
     }),
     sendBookingEmailOnce({
@@ -362,6 +396,7 @@ export async function sendBookingConfirmationEmails(bookingId: string) {
       interactionType: "admin_notification",
       to: adminTo,
       ...(adminReplyTo ? { replyTo: adminReplyTo } : {}),
+      attachments: [invoice],
       variables: { ...variables, bookingUrl: adminBookingUrl },
     }),
   ]);

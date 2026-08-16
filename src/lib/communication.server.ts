@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { leadInteractions } from "@/db/schema/communications";
 import { escapeEmailHtml, sendTemplatedEmail } from "@/lib/email.server";
 import { getLeadSourceLabel, getLeadTypeLabel } from "@/lib/lead-taxonomy";
+import { runPostResponseTask } from "@/lib/request-background.server";
 
 type MailVariables = Record<string, string | number | null | undefined>;
 
@@ -90,47 +91,50 @@ export async function sendAndRecordLeadEmail(input: {
     deliveryStatus: "pending",
     metadata: JSON.stringify({ templateKey: input.templateKey }),
   });
-  try {
-    const sent = await sendTemplatedEmail({
-      templateKey: input.templateKey,
-      to: input.to,
-      variables: input.variables,
-      ...(input.replyTo ? { replyTo: input.replyTo } : {}),
-    });
-    await db
-      .update(leadInteractions)
-      .set({
-        subject: sent.subject,
-        body: sent.text,
-        fromAddress: sent.fromAddress,
-        provider: sent.provider,
-        providerMessageId: sent.messageId,
-        deliveryStatus: sent.accepted ? "sent" : "pending",
-        sentAt: sent.accepted ? new Date() : null,
-        updatedAt: new Date(),
-        metadata: JSON.stringify({
-          templateKey: input.templateKey,
-          transportMode: sent.provider,
-          acceptedByProvider: sent.accepted,
-          mailRoute: sent.route,
-          replyTo: sent.replyTo,
-          fromNameAndAddress: sent.from,
-        }),
-      })
-      .where(eq(leadInteractions.id, interactionId));
-  } catch (error) {
-    await db
-      .update(leadInteractions)
-      .set({
-        deliveryStatus: "failed",
-        failureReason: safeFailure(error),
-        updatedAt: new Date(),
-      })
-      .where(eq(leadInteractions.id, interactionId));
-    console.error("Email attempt failed after lead persistence", {
-      leadId: input.leadId,
-      templateKey: input.templateKey,
-      error: safeFailure(error),
-    });
-  }
+  const deliveryTask = (async () => {
+    try {
+      const sent = await sendTemplatedEmail({
+        templateKey: input.templateKey,
+        to: input.to,
+        variables: input.variables,
+        ...(input.replyTo ? { replyTo: input.replyTo } : {}),
+      });
+      await db
+        .update(leadInteractions)
+        .set({
+          subject: sent.subject,
+          body: sent.text,
+          fromAddress: sent.fromAddress,
+          provider: sent.provider,
+          providerMessageId: sent.messageId,
+          deliveryStatus: sent.accepted ? "sent" : "pending",
+          sentAt: sent.accepted ? new Date() : null,
+          updatedAt: new Date(),
+          metadata: JSON.stringify({
+            templateKey: input.templateKey,
+            transportMode: sent.provider,
+            acceptedByProvider: sent.accepted,
+            mailRoute: sent.route,
+            replyTo: sent.replyTo,
+            fromNameAndAddress: sent.from,
+          }),
+        })
+        .where(eq(leadInteractions.id, interactionId));
+    } catch (error) {
+      await db
+        .update(leadInteractions)
+        .set({
+          deliveryStatus: "failed",
+          failureReason: safeFailure(error),
+          updatedAt: new Date(),
+        })
+        .where(eq(leadInteractions.id, interactionId));
+      console.error("Email attempt failed after lead persistence", {
+        leadId: input.leadId,
+        templateKey: input.templateKey,
+        error: safeFailure(error),
+      });
+    }
+  })();
+  await runPostResponseTask(deliveryTask, `Lead email ${input.templateKey}`);
 }

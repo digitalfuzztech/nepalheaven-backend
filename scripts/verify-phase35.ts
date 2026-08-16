@@ -207,6 +207,15 @@ async function successfulPayment(
   const expectedStatus = option === "full" ? "Paid in Full" : "Partially Paid";
   if (mode !== "failed-smtp")
     for (const item of [customerEmail, adminEmail]) {
+      const metadata = JSON.parse(item.metadata || "{}");
+      assert(
+        metadata.attachments?.length === 1 &&
+          metadata.attachments[0]?.contentType === "application/pdf" &&
+          metadata.attachments[0]?.filename ===
+            `Nepal-Heaven-Invoice-${booking.reference}.pdf` &&
+          metadata.attachments[0]?.size > 1_000,
+        `${option} PDF invoice attachment missing`,
+      );
       assert(
         item.body.includes(`Payment Type: ${expectedType}`),
         `${option} payment type missing`,
@@ -259,8 +268,8 @@ const [templateCount] = await db
   .select({ count: sql<number>`count(*)` })
   .from(emailTemplates);
 assert(
-  Number(templateCount?.count) === 12,
-  "expected exactly 12 email templates",
+  Number(templateCount?.count) === 19,
+  "expected exactly 19 email templates",
 );
 
 if (process.argv.includes("--real-only")) {

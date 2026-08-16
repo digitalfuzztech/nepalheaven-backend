@@ -105,7 +105,7 @@ export async function registerCustomer(formData: RegistrationInput) {
         verificationPath: challenge.verificationPath,
         sent: challenge.sent,
         message: challenge.sent
-          ? "Your pending registration is ready for email verification."
+          ? "Your pending registration is ready. A verification code is being sent."
           : "Your account is awaiting verification. Please use the resend option if needed.",
       };
     }
@@ -148,7 +148,7 @@ export async function registerCustomer(formData: RegistrationInput) {
     verificationPath: challenge.verificationPath,
     sent: challenge.sent,
     message: challenge.sent
-      ? "Check your email for the six-digit verification code."
+      ? "We're sending a six-digit verification code to your email."
       : "Your account is pending verification. You can request another email shortly.",
   };
 }

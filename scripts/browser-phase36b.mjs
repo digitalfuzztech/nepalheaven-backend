@@ -1,6 +1,10 @@
 const email = process.argv[2];
 const action = process.argv[3] || "registration";
 const value = process.argv[4] || "";
+const appUrl = (process.env.TEST_APP_URL || "http://127.0.0.1:8080").replace(
+  /\/$/,
+  "",
+);
 if (!email) throw new Error("A controlled test email is required.");
 
 const pages = await fetch("http://127.0.0.1:9222/json/list").then((response) =>
@@ -72,9 +76,10 @@ const path =
           : action.startsWith("verify") || action === "resend"
             ? value
             : "/registration";
-await send("Page.navigate", { url: `http://127.0.0.1:8080${path}` });
+await send("Page.navigate", { url: `${appUrl}${path}` });
 await delay(3500);
 events.length = 0;
+const submittedAt = Date.now();
 
 if (action === "registration") {
   await evaluate(`(() => {
@@ -148,7 +153,31 @@ if (action === "registration") {
     return true;
   })()`);
 }
-await delay(12000);
+let completionMs = null;
+for (let attempt = 0; attempt < 120; attempt += 1) {
+  await delay(100);
+  const completion = await evaluate(`({
+    path: location.pathname,
+    text: document.body.innerText,
+    button: document.querySelector('button[type="submit"], form button')?.innerText || ""
+  })`);
+  const complete =
+    (action === "registration" && completion.path === "/verify-email") ||
+    (action === "forgot" &&
+      (completion.text.includes("sent password reset instructions") ||
+        completion.text.includes("couldn't find an account") ||
+        completion.text.includes("awaiting email verification"))) ||
+    (action.startsWith("verify") &&
+      (completion.path === "/account" ||
+        completion.text.includes("Incorrect verification code") ||
+        completion.text.includes("expired"))) ||
+    (action === "resend" && completion.text.includes("verification code"));
+  if (complete) {
+    completionMs = Date.now() - submittedAt;
+    break;
+  }
+}
+await delay(1000);
 const state = await evaluate(`({
   url: location.href,
   text: document.body.innerText,
@@ -160,6 +189,7 @@ console.log(
     {
       action,
       email,
+      completionMs,
       state,
       browserErrors: events
         .filter((event) => event.method === "Runtime.exceptionThrown")

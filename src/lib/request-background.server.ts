@@ -23,12 +23,15 @@ export async function runPostResponseTask(
     const request = getRequest() as RequestWithWaitUntil;
     if (typeof request.waitUntil === "function") {
       request.waitUntil(guardedTask);
+      return "deferred" as const;
     } else {
       // Vite's development request bridge does not expose waitUntil. The task
       // is still guarded and its email interactions are durably tracked.
       void guardedTask;
+      return "deferred" as const;
     }
   } catch {
     await guardedTask;
+    return "completed" as const;
   }
 }

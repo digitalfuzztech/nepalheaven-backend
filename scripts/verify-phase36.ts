@@ -78,7 +78,7 @@ for (const unsafe of [
 const [templateCount] = await db
   .select({ count: sql<number>`count(*)` })
   .from(emailTemplates);
-assert(Number(templateCount?.count) === 17, "expected 17 templates");
+assert(Number(templateCount?.count) === 19, "expected 19 templates");
 
 const form = new FormData();
 for (const [key, value] of Object.entries({
@@ -245,7 +245,10 @@ const cooldown = await issueEmailVerification(pendingId);
 assert(!cooldown.sent, "verification cooldown was not respected");
 await db
   .update(emailVerificationChallenges)
-  .set({ createdAt: new Date(Date.now() - 61_000) })
+  .set({
+    createdAt: new Date(Date.now() - 61_000),
+    expiresAt: new Date(Date.now() + 14 * 60_000 - 1_000),
+  })
   .where(eq(emailVerificationChallenges.userId, pendingId));
 const resent = await issueEmailVerification(pendingId);
 assert(

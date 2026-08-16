@@ -18,6 +18,20 @@ const links = [
   { label: "Contact", to: "/contact" },
 ] as const;
 
+function usesSolidNavbar(pathname: string) {
+  return (
+    pathname === "/account" ||
+    pathname.startsWith("/account/") ||
+    pathname === "/verify-email" ||
+    pathname === "/login" ||
+    pathname === "/registration" ||
+    pathname === "/forgot-password" ||
+    pathname === "/reset-password" ||
+    pathname.startsWith("/book/") ||
+    pathname.startsWith("/booking/")
+  );
+}
+
 export function Navbar({ company }: { company: Company }) {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
@@ -26,9 +40,8 @@ export function Navbar({ company }: { company: Company }) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const pathname = useLocation().pathname;
-  const isAccountRoute =
-    pathname === "/account" || pathname.startsWith("/account/");
-  const effectiveScrolled = isAccountRoute || scrolled;
+  const forceSolid = usesSolidNavbar(pathname);
+  const effectiveScrolled = forceSolid || scrolled;
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24);
@@ -38,7 +51,9 @@ export function Navbar({ company }: { company: Company }) {
   }, []);
   useEffect(() => {
     if (!searchOpen) return;
-    const close = (event: KeyboardEvent) => { if (event.key === "Escape") setSearchOpen(false); };
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSearchOpen(false);
+    };
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
   }, [searchOpen]);
@@ -46,7 +61,9 @@ export function Navbar({ company }: { company: Company }) {
   return (
     <header
       className={cn(
-        "fixed inset-x-0 top-0 z-50 transition-[background-color,box-shadow,padding,border-color] duration-500 [transition-timing-function:cubic-bezier(0.22,1,0.36,1)]",
+        "fixed inset-x-0 top-0 z-50 [transition-timing-function:cubic-bezier(0.22,1,0.36,1)]",
+        !forceSolid &&
+          "transition-[background-color,box-shadow,padding,border-color] duration-500",
         effectiveScrolled
           ? "border-b border-border/60 bg-background/70 py-2 shadow-[var(--shadow-soft)] backdrop-blur-2xl [backdrop-filter:blur(24px)_saturate(160%)]"
           : "border-b border-transparent bg-transparent py-5",
@@ -164,7 +181,17 @@ export function Navbar({ company }: { company: Company }) {
 
       {searchOpen ? (
         <div className="container-lux mt-3">
-          <form role="search" onSubmit={(event) => { event.preventDefault(); const q = searchQuery.trim(); if (!q) return; setSearchOpen(false); void navigate({ to: "/search", search: { q } }); }} className="glass-card animate-reveal flex items-center gap-3 rounded-2xl px-5 py-3">
+          <form
+            role="search"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const q = searchQuery.trim();
+              if (!q) return;
+              setSearchOpen(false);
+              void navigate({ to: "/search", search: { q } });
+            }}
+            className="glass-card animate-reveal flex items-center gap-3 rounded-2xl px-5 py-3"
+          >
             <Search
               className="h-4 w-4 shrink-0 text-muted-foreground"
               aria-hidden
@@ -178,7 +205,13 @@ export function Navbar({ company }: { company: Company }) {
               onChange={(event) => setSearchQuery(event.target.value)}
               className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             />
-            <button type="submit" disabled={!searchQuery.trim()} className="rounded-full bg-primary px-4 py-2 text-xs font-bold text-primary-foreground disabled:opacity-50">Search</button>
+            <button
+              type="submit"
+              disabled={!searchQuery.trim()}
+              className="rounded-full bg-primary px-4 py-2 text-xs font-bold text-primary-foreground disabled:opacity-50"
+            >
+              Search
+            </button>
           </form>
         </div>
       ) : null}

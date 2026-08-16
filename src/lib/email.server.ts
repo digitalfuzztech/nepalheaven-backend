@@ -12,6 +12,12 @@ import {
 
 type Variables = Record<string, string | number | null | undefined>;
 
+export type EmailAttachment = {
+  filename: string;
+  content: Buffer;
+  contentType: string;
+};
+
 export function escapeEmailHtml(value: unknown) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -92,6 +98,38 @@ function smtpTransport(transport: "info" | "admin") {
   });
 }
 
+function sendTimeoutMs() {
+  const configured = Number(process.env["MAIL_SEND_TIMEOUT_MS"] ?? 180_000);
+  if (
+    !Number.isInteger(configured) ||
+    configured < 30_000 ||
+    configured > 600_000
+  )
+    throw new Error("MAIL_SEND_TIMEOUT_MS must be between 30000 and 600000.");
+  return configured;
+}
+
+async function withTransportTimeout<T>(
+  transport: ReturnType<typeof smtpTransport>,
+  operation: () => Promise<T>,
+) {
+  const timeoutMs = sendTimeoutMs();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation(),
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => {
+          transport.close();
+          reject(new Error(`SMTP operation exceeded ${timeoutMs}ms.`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
 export async function verifyMailTransport(
   transport: "info" | "admin" = "info",
 ) {
@@ -102,7 +140,8 @@ export async function verifyMailTransport(
       verified: false,
       message: "Log mode: SMTP was not contacted.",
     };
-  await smtpTransport(transport).verify();
+  const smtp = smtpTransport(transport);
+  await withTransportTimeout(smtp, () => smtp.verify());
   return {
     mode,
     transport,
@@ -116,6 +155,7 @@ export async function sendTemplatedEmail(input: {
   to: string;
   variables: Variables;
   replyTo?: string;
+  attachments?: EmailAttachment[];
 }) {
   if (!db) throw new Error("Database is not configured.");
   const [template] = await db
@@ -165,15 +205,25 @@ export async function sendTemplatedEmail(input: {
       provider: "log",
       accepted: false,
       messageId: null,
+      attachments:
+        input.attachments?.map((attachment) => ({
+          filename: attachment.filename,
+          contentType: attachment.contentType,
+          size: attachment.content.length,
+        })) ?? [],
     };
-  const result = await smtpTransport(route.transport).sendMail({
-    from: { name: fromName, address: route.address },
-    to: input.to,
-    replyTo,
-    subject,
-    html,
-    text,
-  });
+  const transport = smtpTransport(route.transport);
+  const result = await withTransportTimeout(transport, () =>
+    transport.sendMail({
+      from: { name: fromName, address: route.address },
+      to: input.to,
+      replyTo,
+      subject,
+      html,
+      text,
+      attachments: input.attachments,
+    }),
+  );
   return {
     subject,
     html,
@@ -185,5 +235,11 @@ export async function sendTemplatedEmail(input: {
     provider: "smtp",
     accepted: true,
     messageId: result.messageId,
+    attachments:
+      input.attachments?.map((attachment) => ({
+        filename: attachment.filename,
+        contentType: attachment.contentType,
+        size: attachment.content.length,
+      })) ?? [],
   };
 }

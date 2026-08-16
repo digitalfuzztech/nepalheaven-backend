@@ -72,6 +72,7 @@ export async function issueEmailVerification(userId: string) {
 
   const code = generateVerificationCode();
   const token = randomBytes(32).toString("base64url");
+  const challengeId = randomUUID();
   await db.transaction(async (transaction) => {
     await transaction
       .update(emailVerificationChallenges)
@@ -83,7 +84,7 @@ export async function issueEmailVerification(userId: string) {
         ),
       );
     await transaction.insert(emailVerificationChallenges).values({
-      id: randomUUID(),
+      id: challengeId,
       userId: user.id,
       codeHash: hashVerificationCode(code),
       tokenHash: hashToken(token),
@@ -98,6 +99,7 @@ export async function issueEmailVerification(userId: string) {
     templateKey: "customer_email_verification",
     to: user.email,
     sensitiveBody: true,
+    eventId: challengeId,
     variables: {
       customerName: user.name,
       verificationCode: code,
@@ -140,7 +142,7 @@ export async function resendEmailVerification(input: {
   return {
     ok: true as const,
     message: result.sent
-      ? "A new verification email has been sent."
+      ? "A new verification code is being sent."
       : "Please wait before requesting another verification email.",
     verificationPath: result.verificationPath,
   };
