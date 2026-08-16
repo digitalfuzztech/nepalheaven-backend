@@ -1,12 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
-import { X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Play, X } from "lucide-react";
 import { getPublicSiteSettingsFn } from "@/lib/content.functions";
 import { PageHero } from "@/components/PageHero";
 import { Reveal } from "@/components/Reveal";
 import { cn } from "@/lib/utils";
 
-const categories = ["All", "Mountains", "Culture", "Wildlife", "Lakes", "Adventure", "Festivals"];
+const mediaFilters = ["All", "Photos", "Videos"] as const;
+const subjects = ["All Subjects", "Mountains", "Culture", "Wildlife", "Lakes", "Adventure", "Festivals", "Uncategorised"];
 
 export const Route = createFileRoute("/gallery")({
   loader: () => getPublicSiteSettingsFn(),
@@ -28,14 +29,16 @@ export const Route = createFileRoute("/gallery")({
 
 function GalleryPage() {
   const { galleryItems, images } = Route.useLoaderData();
-  const [category, setCategory] = useState("All");
+  const [mediaFilter, setMediaFilter] = useState<(typeof mediaFilters)[number]>("All");
+  const [subject, setSubject] = useState("All Subjects");
   const [lightbox, setLightbox] = useState<number | null>(null);
 
   const items = useMemo(
-    () => galleryItems.filter((g) => category === "All" || g.category === category),
-    [category],
+    () => galleryItems.filter((g) => (mediaFilter === "All" || (mediaFilter === "Photos" && g.type === "image") || (mediaFilter === "Videos" && g.type === "video")) && (subject === "All Subjects" || g.category === subject)),
+    [galleryItems, mediaFilter, subject],
   );
   const active = lightbox !== null ? items[lightbox] : undefined;
+  useEffect(() => { if (!active) return; const close = (event: KeyboardEvent) => { if (event.key === "Escape") setLightbox(null); }; window.addEventListener("keydown", close); return () => window.removeEventListener("keydown", close); }, [active]);
 
   return (
     <>
@@ -49,19 +52,19 @@ function GalleryPage() {
       />
 
       <section className="container-lux py-20 lg:py-24">
-        <ul className="flex flex-wrap justify-center gap-2">
-          {categories.map((c) => (
+        <ul aria-label="Media type" className="flex flex-wrap justify-center gap-2">
+          {mediaFilters.map((c) => (
             <li key={c}>
               <button
                 type="button"
-                aria-pressed={category === c}
+                aria-pressed={mediaFilter === c}
                 onClick={() => {
-                  setCategory(c);
+                  setMediaFilter(c);
                   setLightbox(null);
                 }}
                 className={cn(
                   "rounded-full border px-5 py-2.5 text-xs font-semibold transition-colors",
-                  category === c
+                  mediaFilter === c
                     ? "border-primary bg-primary text-primary-foreground"
                     : "border-border text-muted-foreground hover:border-gold hover:text-gold",
                 )}
@@ -71,8 +74,9 @@ function GalleryPage() {
             </li>
           ))}
         </ul>
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-2" aria-label="Gallery subject"><span className="mr-2 text-xs font-bold uppercase tracking-[0.16em] text-muted-foreground">Subject</span>{subjects.map((item) => <button key={item} type="button" aria-pressed={subject === item} onClick={() => { setSubject(item); setLightbox(null); }} className={cn("rounded-full px-3 py-1.5 text-xs font-semibold", subject === item ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-gold")}>{item}</button>)}</div>
 
-        <ul className="mt-12 grid auto-rows-[13rem] grid-cols-2 gap-4 lg:grid-cols-4">
+        {items.length ? <ul className="mt-12 grid auto-rows-[13rem] grid-cols-2 gap-4 lg:grid-cols-4">
           {items.map((g, i) => (
             <Reveal
               key={g.title}
@@ -88,7 +92,8 @@ function GalleryPage() {
                 onClick={() => setLightbox(i)}
                 className="zoom-media group relative block h-full w-full overflow-hidden rounded-3xl text-left"
               >
-                <img src={g.image} alt={g.title} loading="lazy" className="h-full w-full object-cover" />
+                <img src={g.type === "video" ? g.thumbnail : g.image} alt={g.title} loading="lazy" className="h-full w-full object-cover" />
+                {g.type === "video" ? <span className="absolute inset-0 z-10 grid place-items-center"><span className="grid h-14 w-14 place-items-center rounded-full bg-gold text-gold-foreground"><Play className="ml-1 h-6 w-6 fill-current" /></span></span> : null}
                 <span className="bg-veil absolute inset-0 opacity-70 transition-opacity duration-500 group-hover:opacity-95" />
                 <span className="absolute inset-x-0 bottom-0 p-5">
                   <span className="block text-[0.65rem] font-bold uppercase tracking-[0.2em] text-gold">
@@ -101,7 +106,7 @@ function GalleryPage() {
               </button>
             </Reveal>
           ))}
-        </ul>
+        </ul> : <div className="mt-12 rounded-3xl border border-border bg-card p-12 text-center"><Play className="mx-auto h-9 w-9 text-gold" /><h2 className="mt-4 text-2xl">{mediaFilter === "Videos" ? "Videos coming soon" : "Nothing here yet"}</h2><p className="mt-3 text-sm text-muted-foreground">{mediaFilter === "Videos" ? "The gallery supports real database video records; an owned or licensed source still needs to be supplied." : "Choose another filter."}</p></div>}
       </section>
 
       {active ? (
@@ -121,7 +126,7 @@ function GalleryPage() {
             <X className="h-5 w-5" aria-hidden />
           </button>
           <figure className="max-h-[85vh] w-full max-w-4xl" onClick={(e) => e.stopPropagation()}>
-            <img src={active.image} alt={active.title} className="max-h-[75vh] w-full rounded-3xl object-cover" />
+            {active.type === "video" && active.videoUrl ? <VideoPlayer item={active} /> : <img src={active.image} alt={active.title} className="max-h-[75vh] w-full rounded-3xl object-contain" />}
             <figcaption className="mt-4 text-center text-sm text-primary-foreground/80">
               {active.title} — {active.category}
             </figcaption>
@@ -130,4 +135,20 @@ function GalleryPage() {
       ) : null}
     </>
   );
+}
+
+function VideoPlayer({ item }: { item: (typeof Route.types.loaderData)["galleryItems"][number] }) {
+  const provider = item.provider?.toLowerCase();
+  const embedUrl = safeEmbedUrl(provider, item.videoUrl);
+  if (embedUrl) return <iframe src={embedUrl} title={item.title} allow="fullscreen; picture-in-picture" allowFullScreen loading="lazy" className="aspect-video w-full rounded-3xl bg-black" />;
+  return <video src={item.videoUrl} poster={item.thumbnail} controls preload="metadata" playsInline className="max-h-[75vh] w-full rounded-3xl bg-black" />;
+}
+
+function safeEmbedUrl(provider: string | undefined, value: string | undefined) {
+  if (!provider || !value || !["youtube", "vimeo"].includes(provider)) return null;
+  try {
+    const url = new URL(value);
+    const hosts = provider === "youtube" ? ["www.youtube.com", "youtube.com", "www.youtube-nocookie.com"] : ["player.vimeo.com"];
+    return url.protocol === "https:" && hosts.includes(url.hostname) ? url.toString() : null;
+  } catch { return null; }
 }

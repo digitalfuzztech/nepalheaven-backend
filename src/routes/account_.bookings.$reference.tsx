@@ -2,7 +2,9 @@ import {
   createFileRoute,
   Link,
   notFound,
+  redirect,
   useNavigate,
+  useRouter,
 } from "@tanstack/react-router";
 import {
   CalendarDays,
@@ -32,6 +34,16 @@ export const Route = createFileRoute("/account_/bookings/$reference")({
     const result = await getMyBookingByReferenceFn({
       data: { reference: params.reference },
     });
+    if (
+      !result.ok &&
+      (result.code === "AUTH_REQUIRED" || result.code === "CUSTOMER_REQUIRED")
+    )
+      throw redirect({
+        to: "/login",
+        search: {
+          redirect: `/account/bookings/${encodeURIComponent(params.reference)}`,
+        },
+      });
     if (!result.ok && result.code === "BOOKING_NOT_FOUND") throw notFound();
     return result;
   },
@@ -40,8 +52,10 @@ export const Route = createFileRoute("/account_/bookings/$reference")({
 
 function BookingDetailPage() {
   const result = Route.useLoaderData();
+  const { reference } = Route.useParams();
   const { user, ready } = useAuth();
   const navigate = useNavigate();
+  const router = useRouter();
   const [documentType, setDocumentType] = useState<"passport" | "national_id">(
     "passport",
   );
@@ -63,13 +77,11 @@ function BookingDetailPage() {
       void navigate({
         to: "/login",
         search: {
-          redirect: result.ok
-            ? `/account/bookings/${encodeURIComponent(result.booking.reference)}`
-            : "/account",
+          redirect: `/account/bookings/${encodeURIComponent(reference)}`,
         },
         replace: true,
       });
-  }, [ready, user, navigate, result]);
+  }, [ready, user, navigate, reference]);
   if (!ready || !user || user.role !== "customer")
     return <div className="min-h-[70vh]" />;
   if (!result.ok)
@@ -153,12 +165,23 @@ function BookingDetailPage() {
   async function confirmCancellation() {
     setCancelling(true);
     setActionError("");
+    let cancellationCommitted = false;
     try {
       const response = await cancelMyBookingFn({
         data: { reference: booking.reference, reason: reason || undefined },
       });
       if (!response.ok) return setActionError(response.message);
-      window.location.reload();
+      cancellationCommitted = true;
+      setPreview(null);
+      await router.invalidate();
+    } catch {
+      if (cancellationCommitted) {
+        window.location.reload();
+        return;
+      }
+      setActionError(
+        "We couldn't cancel this booking right now. Please try again.",
+      );
     } finally {
       setCancelling(false);
     }
@@ -552,7 +575,11 @@ function BookingDetailPage() {
           <Card title="Cancellation policy" icon={ShieldCheck}>
             <Detail
               label="Effective fee snapshot"
-              value={`${booking.cancellationFeePercentage}% (${booking.cancellationPolicySource || "configured"})`}
+              value={
+                booking.cancellationFeeType === "fixed"
+                  ? `${money(booking.cancellationFeeValue, booking.currency)} fixed (${booking.cancellationPolicySource || "configured"})`
+                  : `${booking.cancellationFeeValue}% of grand total (${booking.cancellationPolicySource || "configured"})`
+              }
             />
             <Detail
               label="Estimated fee"
@@ -571,6 +598,14 @@ function BookingDetailPage() {
                 <Detail
                   label="Refund status"
                   value={refundLabel(booking.refundStatus)}
+                />
+                <Detail
+                  label="Refund deadline"
+                  value={
+                    booking.refundProcessingDeadline
+                      ? dateTime(booking.refundProcessingDeadline)
+                      : "Not applicable"
+                  }
                 />
                 {booking.refundedAmount > 0 ? (
                   <Detail
@@ -617,7 +652,11 @@ function BookingDetailPage() {
                   row
                 />
                 <Detail
-                  label={`Cancellation fee (${preview.cancellationFeePercentage}%)`}
+                  label={
+                    preview.cancellationFeeType === "fixed"
+                      ? `Cancellation fee (${money(preview.cancellationFeeValue, preview.currency)} fixed)`
+                      : `Cancellation fee (${preview.cancellationFeeValue}% of grand total)`
+                  }
                   value={money(preview.cancellationFeeAmount, preview.currency)}
                   row
                 />

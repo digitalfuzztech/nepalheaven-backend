@@ -22,7 +22,13 @@ import { Route as GalleryRouteImport } from './routes/gallery'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as RegistrationRouteImport } from './routes/registration'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as SearchRouteImport } from './routes/search'
+import { Route as UnsubscribeRouteImport } from './routes/unsubscribe'
+import { Route as VerifyEmailRouteImport } from './routes/verify-email'
+import { Route as WhatsappRouteImport } from './routes/whatsapp'
 import { Route as AdminDashboardRouteImport } from './routes/admin_.dashboard'
+import { Route as AdminForgotPasswordRouteImport } from './routes/admin_.forgot-password'
+import { Route as AdminResetPasswordRouteImport } from './routes/admin_.reset-password'
 import { Route as BlogIndexRouteImport } from './routes/blog.index'
 import { Route as BlogSlugRouteImport } from './routes/blog.$slug'
 import { Route as BookSlugRouteImport } from './routes/book.$slug'
@@ -30,9 +36,12 @@ import { Route as BookingPaymentRouteImport } from './routes/booking.payment'
 import { Route as BookingSuccessRouteImport } from './routes/booking.success'
 import { Route as DestinationsIndexRouteImport } from './routes/destinations.index'
 import { Route as DestinationsSlugRouteImport } from './routes/destinations.$slug'
+import { Route as ExperiencesSlugRouteImport } from './routes/experiences.$slug'
 import { Route as PackagesIndexRouteImport } from './routes/packages.index'
 import { Route as PackagesSlugRouteImport } from './routes/packages.$slug'
 import { Route as AccountBookingsReferenceRouteImport } from './routes/account_.bookings.$reference'
+import { Route as AdminCrmBookingsCancelledReferenceRouteImport } from './routes/admin_.crm.bookings.cancelled.$reference'
+import { Route as AdminCrmBookingsConfirmedReferenceRouteImport } from './routes/admin_.crm.bookings.confirmed.$reference'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -99,9 +108,39 @@ const ResetPasswordRoute = ResetPasswordRouteImport.update({
   path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SearchRoute = SearchRouteImport.update({
+  id: '/search',
+  path: '/search',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UnsubscribeRoute = UnsubscribeRouteImport.update({
+  id: '/unsubscribe',
+  path: '/unsubscribe',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VerifyEmailRoute = VerifyEmailRouteImport.update({
+  id: '/verify-email',
+  path: '/verify-email',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WhatsappRoute = WhatsappRouteImport.update({
+  id: '/whatsapp',
+  path: '/whatsapp',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminDashboardRoute = AdminDashboardRouteImport.update({
   id: '/admin_/dashboard',
   path: '/admin/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminForgotPasswordRoute = AdminForgotPasswordRouteImport.update({
+  id: '/admin_/forgot-password',
+  path: '/admin/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminResetPasswordRoute = AdminResetPasswordRouteImport.update({
+  id: '/admin_/reset-password',
+  path: '/admin/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BlogIndexRoute = BlogIndexRouteImport.update({
@@ -139,6 +178,11 @@ const DestinationsSlugRoute = DestinationsSlugRouteImport.update({
   path: '/destinations/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ExperiencesSlugRoute = ExperiencesSlugRouteImport.update({
+  id: '/$slug',
+  path: '/$slug',
+  getParentRoute: () => ExperiencesRoute,
+} as any)
 const PackagesIndexRoute = PackagesIndexRouteImport.update({
   id: '/packages/',
   path: '/packages/',
@@ -155,6 +199,18 @@ const AccountBookingsReferenceRoute =
     path: '/account/bookings/$reference',
     getParentRoute: () => rootRouteImport,
   } as any)
+const AdminCrmBookingsCancelledReferenceRoute =
+  AdminCrmBookingsCancelledReferenceRouteImport.update({
+    id: '/admin_/crm/bookings/cancelled/$reference',
+    path: '/admin/crm/bookings/cancelled/$reference',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const AdminCrmBookingsConfirmedReferenceRoute =
+  AdminCrmBookingsConfirmedReferenceRouteImport.update({
+    id: '/admin_/crm/bookings/confirmed/$reference',
+    path: '/admin/crm/bookings/confirmed/$reference',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -163,24 +219,33 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRoute
   '/compare': typeof CompareRoute
   '/contact': typeof ContactRoute
-  '/experiences': typeof ExperiencesRoute
+  '/experiences': typeof ExperiencesRouteWithChildren
   '/faq': typeof FaqRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/gallery': typeof GalleryRoute
   '/login': typeof LoginRoute
   '/registration': typeof RegistrationRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/search': typeof SearchRoute
+  '/unsubscribe': typeof UnsubscribeRoute
+  '/verify-email': typeof VerifyEmailRoute
+  '/whatsapp': typeof WhatsappRoute
   '/admin/dashboard': typeof AdminDashboardRoute
+  '/admin/forgot-password': typeof AdminForgotPasswordRoute
+  '/admin/reset-password': typeof AdminResetPasswordRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/book/$slug': typeof BookSlugRoute
   '/booking/payment': typeof BookingPaymentRoute
   '/booking/success': typeof BookingSuccessRoute
   '/destinations/$slug': typeof DestinationsSlugRoute
+  '/experiences/$slug': typeof ExperiencesSlugRoute
   '/packages/$slug': typeof PackagesSlugRoute
   '/blog/': typeof BlogIndexRoute
   '/destinations/': typeof DestinationsIndexRoute
   '/packages/': typeof PackagesIndexRoute
   '/account/bookings/$reference': typeof AccountBookingsReferenceRoute
+  '/admin/crm/bookings/cancelled/$reference': typeof AdminCrmBookingsCancelledReferenceRoute
+  '/admin/crm/bookings/confirmed/$reference': typeof AdminCrmBookingsConfirmedReferenceRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -189,24 +254,33 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRoute
   '/compare': typeof CompareRoute
   '/contact': typeof ContactRoute
-  '/experiences': typeof ExperiencesRoute
+  '/experiences': typeof ExperiencesRouteWithChildren
   '/faq': typeof FaqRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/gallery': typeof GalleryRoute
   '/login': typeof LoginRoute
   '/registration': typeof RegistrationRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/search': typeof SearchRoute
+  '/unsubscribe': typeof UnsubscribeRoute
+  '/verify-email': typeof VerifyEmailRoute
+  '/whatsapp': typeof WhatsappRoute
   '/admin/dashboard': typeof AdminDashboardRoute
+  '/admin/forgot-password': typeof AdminForgotPasswordRoute
+  '/admin/reset-password': typeof AdminResetPasswordRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/book/$slug': typeof BookSlugRoute
   '/booking/payment': typeof BookingPaymentRoute
   '/booking/success': typeof BookingSuccessRoute
   '/destinations/$slug': typeof DestinationsSlugRoute
+  '/experiences/$slug': typeof ExperiencesSlugRoute
   '/packages/$slug': typeof PackagesSlugRoute
   '/blog': typeof BlogIndexRoute
   '/destinations': typeof DestinationsIndexRoute
   '/packages': typeof PackagesIndexRoute
   '/account/bookings/$reference': typeof AccountBookingsReferenceRoute
+  '/admin/crm/bookings/cancelled/$reference': typeof AdminCrmBookingsCancelledReferenceRoute
+  '/admin/crm/bookings/confirmed/$reference': typeof AdminCrmBookingsConfirmedReferenceRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -216,24 +290,33 @@ export interface FileRoutesById {
   '/admin': typeof AdminRoute
   '/compare': typeof CompareRoute
   '/contact': typeof ContactRoute
-  '/experiences': typeof ExperiencesRoute
+  '/experiences': typeof ExperiencesRouteWithChildren
   '/faq': typeof FaqRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/gallery': typeof GalleryRoute
   '/login': typeof LoginRoute
   '/registration': typeof RegistrationRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/search': typeof SearchRoute
+  '/unsubscribe': typeof UnsubscribeRoute
+  '/verify-email': typeof VerifyEmailRoute
+  '/whatsapp': typeof WhatsappRoute
   '/admin_/dashboard': typeof AdminDashboardRoute
+  '/admin_/forgot-password': typeof AdminForgotPasswordRoute
+  '/admin_/reset-password': typeof AdminResetPasswordRoute
   '/blog/$slug': typeof BlogSlugRoute
   '/book/$slug': typeof BookSlugRoute
   '/booking/payment': typeof BookingPaymentRoute
   '/booking/success': typeof BookingSuccessRoute
   '/destinations/$slug': typeof DestinationsSlugRoute
+  '/experiences/$slug': typeof ExperiencesSlugRoute
   '/packages/$slug': typeof PackagesSlugRoute
   '/blog/': typeof BlogIndexRoute
   '/destinations/': typeof DestinationsIndexRoute
   '/packages/': typeof PackagesIndexRoute
   '/account_/bookings/$reference': typeof AccountBookingsReferenceRoute
+  '/admin_/crm/bookings/cancelled/$reference': typeof AdminCrmBookingsCancelledReferenceRoute
+  '/admin_/crm/bookings/confirmed/$reference': typeof AdminCrmBookingsConfirmedReferenceRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -251,17 +334,26 @@ export interface FileRouteTypes {
     | '/login'
     | '/registration'
     | '/reset-password'
+    | '/search'
+    | '/unsubscribe'
+    | '/verify-email'
+    | '/whatsapp'
     | '/admin/dashboard'
+    | '/admin/forgot-password'
+    | '/admin/reset-password'
     | '/blog/$slug'
     | '/book/$slug'
     | '/booking/payment'
     | '/booking/success'
     | '/destinations/$slug'
+    | '/experiences/$slug'
     | '/packages/$slug'
     | '/blog/'
     | '/destinations/'
     | '/packages/'
     | '/account/bookings/$reference'
+    | '/admin/crm/bookings/cancelled/$reference'
+    | '/admin/crm/bookings/confirmed/$reference'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -277,17 +369,26 @@ export interface FileRouteTypes {
     | '/login'
     | '/registration'
     | '/reset-password'
+    | '/search'
+    | '/unsubscribe'
+    | '/verify-email'
+    | '/whatsapp'
     | '/admin/dashboard'
+    | '/admin/forgot-password'
+    | '/admin/reset-password'
     | '/blog/$slug'
     | '/book/$slug'
     | '/booking/payment'
     | '/booking/success'
     | '/destinations/$slug'
+    | '/experiences/$slug'
     | '/packages/$slug'
     | '/blog'
     | '/destinations'
     | '/packages'
     | '/account/bookings/$reference'
+    | '/admin/crm/bookings/cancelled/$reference'
+    | '/admin/crm/bookings/confirmed/$reference'
   id:
     | '__root__'
     | '/'
@@ -303,17 +404,26 @@ export interface FileRouteTypes {
     | '/login'
     | '/registration'
     | '/reset-password'
+    | '/search'
+    | '/unsubscribe'
+    | '/verify-email'
+    | '/whatsapp'
     | '/admin_/dashboard'
+    | '/admin_/forgot-password'
+    | '/admin_/reset-password'
     | '/blog/$slug'
     | '/book/$slug'
     | '/booking/payment'
     | '/booking/success'
     | '/destinations/$slug'
+    | '/experiences/$slug'
     | '/packages/$slug'
     | '/blog/'
     | '/destinations/'
     | '/packages/'
     | '/account_/bookings/$reference'
+    | '/admin_/crm/bookings/cancelled/$reference'
+    | '/admin_/crm/bookings/confirmed/$reference'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -323,14 +433,20 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRoute
   CompareRoute: typeof CompareRoute
   ContactRoute: typeof ContactRoute
-  ExperiencesRoute: typeof ExperiencesRoute
+  ExperiencesRoute: typeof ExperiencesRouteWithChildren
   FaqRoute: typeof FaqRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   GalleryRoute: typeof GalleryRoute
   LoginRoute: typeof LoginRoute
   RegistrationRoute: typeof RegistrationRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  SearchRoute: typeof SearchRoute
+  UnsubscribeRoute: typeof UnsubscribeRoute
+  VerifyEmailRoute: typeof VerifyEmailRoute
+  WhatsappRoute: typeof WhatsappRoute
   AdminDashboardRoute: typeof AdminDashboardRoute
+  AdminForgotPasswordRoute: typeof AdminForgotPasswordRoute
+  AdminResetPasswordRoute: typeof AdminResetPasswordRoute
   BlogSlugRoute: typeof BlogSlugRoute
   BookSlugRoute: typeof BookSlugRoute
   BookingPaymentRoute: typeof BookingPaymentRoute
@@ -341,6 +457,8 @@ export interface RootRouteChildren {
   DestinationsIndexRoute: typeof DestinationsIndexRoute
   PackagesIndexRoute: typeof PackagesIndexRoute
   AccountBookingsReferenceRoute: typeof AccountBookingsReferenceRoute
+  AdminCrmBookingsCancelledReferenceRoute: typeof AdminCrmBookingsCancelledReferenceRoute
+  AdminCrmBookingsConfirmedReferenceRoute: typeof AdminCrmBookingsConfirmedReferenceRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -436,11 +554,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/search': {
+      id: '/search'
+      path: '/search'
+      fullPath: '/search'
+      preLoaderRoute: typeof SearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/unsubscribe': {
+      id: '/unsubscribe'
+      path: '/unsubscribe'
+      fullPath: '/unsubscribe'
+      preLoaderRoute: typeof UnsubscribeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/verify-email': {
+      id: '/verify-email'
+      path: '/verify-email'
+      fullPath: '/verify-email'
+      preLoaderRoute: typeof VerifyEmailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/whatsapp': {
+      id: '/whatsapp'
+      path: '/whatsapp'
+      fullPath: '/whatsapp'
+      preLoaderRoute: typeof WhatsappRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin_/dashboard': {
       id: '/admin_/dashboard'
       path: '/admin/dashboard'
       fullPath: '/admin/dashboard'
       preLoaderRoute: typeof AdminDashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin_/forgot-password': {
+      id: '/admin_/forgot-password'
+      path: '/admin/forgot-password'
+      fullPath: '/admin/forgot-password'
+      preLoaderRoute: typeof AdminForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin_/reset-password': {
+      id: '/admin_/reset-password'
+      path: '/admin/reset-password'
+      fullPath: '/admin/reset-password'
+      preLoaderRoute: typeof AdminResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/blog/': {
@@ -492,6 +652,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DestinationsSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/experiences/$slug': {
+      id: '/experiences/$slug'
+      path: '/$slug'
+      fullPath: '/experiences/$slug'
+      preLoaderRoute: typeof ExperiencesSlugRouteImport
+      parentRoute: typeof ExperiencesRoute
+    }
     '/packages/': {
       id: '/packages/'
       path: '/packages'
@@ -513,8 +680,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountBookingsReferenceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin_/crm/bookings/cancelled/$reference': {
+      id: '/admin_/crm/bookings/cancelled/$reference'
+      path: '/admin/crm/bookings/cancelled/$reference'
+      fullPath: '/admin/crm/bookings/cancelled/$reference'
+      preLoaderRoute: typeof AdminCrmBookingsCancelledReferenceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin_/crm/bookings/confirmed/$reference': {
+      id: '/admin_/crm/bookings/confirmed/$reference'
+      path: '/admin/crm/bookings/confirmed/$reference'
+      fullPath: '/admin/crm/bookings/confirmed/$reference'
+      preLoaderRoute: typeof AdminCrmBookingsConfirmedReferenceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
+
+interface ExperiencesRouteChildren {
+  ExperiencesSlugRoute: typeof ExperiencesSlugRoute
+}
+
+const ExperiencesRouteChildren: ExperiencesRouteChildren = {
+  ExperiencesSlugRoute: ExperiencesSlugRoute,
+}
+
+const ExperiencesRouteWithChildren = ExperiencesRoute._addFileChildren(
+  ExperiencesRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -523,14 +716,20 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRoute,
   CompareRoute: CompareRoute,
   ContactRoute: ContactRoute,
-  ExperiencesRoute: ExperiencesRoute,
+  ExperiencesRoute: ExperiencesRouteWithChildren,
   FaqRoute: FaqRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   GalleryRoute: GalleryRoute,
   LoginRoute: LoginRoute,
   RegistrationRoute: RegistrationRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  SearchRoute: SearchRoute,
+  UnsubscribeRoute: UnsubscribeRoute,
+  VerifyEmailRoute: VerifyEmailRoute,
+  WhatsappRoute: WhatsappRoute,
   AdminDashboardRoute: AdminDashboardRoute,
+  AdminForgotPasswordRoute: AdminForgotPasswordRoute,
+  AdminResetPasswordRoute: AdminResetPasswordRoute,
   BlogSlugRoute: BlogSlugRoute,
   BookSlugRoute: BookSlugRoute,
   BookingPaymentRoute: BookingPaymentRoute,
@@ -541,6 +740,10 @@ const rootRouteChildren: RootRouteChildren = {
   DestinationsIndexRoute: DestinationsIndexRoute,
   PackagesIndexRoute: PackagesIndexRoute,
   AccountBookingsReferenceRoute: AccountBookingsReferenceRoute,
+  AdminCrmBookingsCancelledReferenceRoute:
+    AdminCrmBookingsCancelledReferenceRoute,
+  AdminCrmBookingsConfirmedReferenceRoute:
+    AdminCrmBookingsConfirmedReferenceRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

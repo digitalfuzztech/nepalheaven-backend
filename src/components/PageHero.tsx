@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
 
-export type Crumb = { label: string; to?: "/" | "/destinations" | "/packages" | "/blog" };
+export type Crumb = { label: string; to?: "/" | "/destinations" | "/packages" | "/experiences" | "/blog" };
 
 export function PageHero({
   image,

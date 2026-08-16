@@ -207,6 +207,34 @@ export const getBookingSummaryFn = createServerFn({ method: "GET" })
     }
   });
 
+export const getAdminConfirmedBookingFn = createServerFn({ method: "GET" })
+  .validator(referenceSchema)
+  .handler(async ({ data }) => {
+    const { getAdminConfirmedBooking } = await import("@/lib/booking.server");
+    try {
+      return {
+        ok: true as const,
+        booking: await getAdminConfirmedBooking(data.reference),
+      };
+    } catch (error) {
+      return publicFailure(error);
+    }
+  });
+
+export const getAdminCancelledBookingFn = createServerFn({ method: "GET" })
+  .validator(referenceSchema)
+  .handler(async ({ data }) => {
+    const { getAdminCancelledBooking } = await import("@/lib/booking.server");
+    try {
+      return {
+        ok: true as const,
+        booking: await getAdminCancelledBooking(data.reference),
+      };
+    } catch (error) {
+      return publicFailure(error);
+    }
+  });
+
 export const getMyBookingsFn = createServerFn({ method: "GET" }).handler(
   async () => {
     const { getMyBookings } = await import("@/lib/booking.server");

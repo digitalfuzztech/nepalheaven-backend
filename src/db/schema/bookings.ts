@@ -11,7 +11,7 @@ import {
   varchar,
 } from "drizzle-orm/mysql-core";
 import { users } from "./users";
-import { packages, packageTiers } from "./packages";
+import { cancellationFeeTypeValues, packages, packageTiers } from "./packages";
 import {
   defaultMomentColumn,
   momentColumn,
@@ -101,6 +101,19 @@ export const bookingIntents = mysqlTable(
       "cancellation_fee_percentage_snapshot",
       { precision: 5, scale: 2 },
     ).notNull(),
+    cancellationFeeTypeSnapshot: mysqlEnum(
+      "cancellation_fee_type_snapshot",
+      cancellationFeeTypeValues,
+    )
+      .default("percentage")
+      .notNull(),
+    cancellationFeeValueSnapshot: decimal("cancellation_fee_value_snapshot", {
+      precision: 12,
+      scale: 2,
+    })
+      .default("0.00")
+      .notNull(),
+    cancellationPolicyTextSnapshot: text("cancellation_policy_text_snapshot"),
     cancellationPolicySourceSnapshot: text(
       "cancellation_policy_source_snapshot",
     ),
@@ -198,12 +211,34 @@ export const bookings = mysqlTable("bookings", {
     "cancellation_fee_percentage_snapshot",
     { precision: 5, scale: 2 },
   ),
+  cancellationFeeTypeSnapshot: mysqlEnum(
+    "cancellation_fee_type_snapshot",
+    cancellationFeeTypeValues,
+  )
+    .default("percentage")
+    .notNull(),
+  cancellationFeeValueSnapshot: decimal("cancellation_fee_value_snapshot", {
+    precision: 12,
+    scale: 2,
+  })
+    .default("0.00")
+    .notNull(),
+  cancellationPolicyTextSnapshot: text("cancellation_policy_text_snapshot"),
   cancellationPolicySourceSnapshot: text("cancellation_policy_source_snapshot"),
   cancellationFeeAmount: decimal("cancellation_fee_amount", {
     precision: 12,
     scale: 2,
   }),
   refundAmount: decimal("refund_amount", { precision: 12, scale: 2 }),
+  amountPaidAtCancellationSnapshot: decimal(
+    "amount_paid_at_cancellation_snapshot",
+    { precision: 12, scale: 2 },
+  ),
+  previouslyRefundedAmountSnapshot: decimal(
+    "previously_refunded_amount_snapshot",
+    { precision: 12, scale: 2 },
+  ),
+  refundProcessingDeadline: momentColumn("refund_processing_deadline"),
   cancelledAt: momentColumn("cancelled_at"),
   cancellationReason: text("cancellation_reason"),
   currency: text("currency").default("USD").notNull(),

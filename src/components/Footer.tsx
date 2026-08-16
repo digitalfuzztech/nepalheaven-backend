@@ -1,7 +1,17 @@
 import { Link } from "@tanstack/react-router";
-import { Facebook, Instagram, Youtube, Twitter, Mail, Phone, MapPin, MountainSnow, Send } from "lucide-react";
+import {
+  Facebook,
+  Instagram,
+  Youtube,
+  Twitter,
+  Mail,
+  Phone,
+  MapPin,
+  MountainSnow,
+} from "lucide-react";
 import type { ShellContent } from "@/lib/content.types";
 import whiteLogo from "@/assets/logo-light4.png";
+import { NewsletterForm } from "@/components/NewsletterForm";
 
 export function Footer({ company, destinations, packages }: ShellContent) {
   return (
@@ -15,28 +25,41 @@ export function Footer({ company, destinations, packages }: ShellContent) {
           <div>
             <div className="flex items-center gap-3">
               <img
-                  src={whiteLogo}
-                  alt="Nepal Heaven"
-                  className="h-30 w-auto transition-all duration-500"
+                src={whiteLogo}
+                alt="Nepal Heaven"
+                className="h-30 w-auto transition-all duration-500"
               />
             </div>
             <p className="mt-5 max-w-sm text-sm leading-relaxed text-primary-foreground/70">
-              Fifteen years designing private Himalayan journeys — from the Khumbu icefall to the walled lanes of
-              Lo Manthang. Licensed, insured and locally owned in Kathmandu.
+              Fifteen years designing private Himalayan journeys — from the
+              Khumbu icefall to the walled lanes of Lo Manthang. Licensed,
+              insured and locally owned in Kathmandu.
             </p>
             <ul className="mt-6 space-y-3 text-sm text-primary-foreground/75">
               <li className="flex gap-3">
-                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gold" aria-hidden />
+                <MapPin
+                  className="mt-0.5 h-4 w-4 shrink-0 text-gold"
+                  aria-hidden
+                />
                 {company.address}
               </li>
               <li className="flex gap-3">
-                <Phone className="mt-0.5 h-4 w-4 shrink-0 text-gold" aria-hidden />
-                <a className="hover:text-gold" href={`tel:${company.phone.replace(/\s/g, "")}`}>
+                <Phone
+                  className="mt-0.5 h-4 w-4 shrink-0 text-gold"
+                  aria-hidden
+                />
+                <a
+                  className="hover:text-gold"
+                  href={`tel:${company.phone.replace(/\s/g, "")}`}
+                >
                   {company.phone}
                 </a>
               </li>
               <li className="flex gap-3">
-                <Mail className="mt-0.5 h-4 w-4 shrink-0 text-gold" aria-hidden />
+                <Mail
+                  className="mt-0.5 h-4 w-4 shrink-0 text-gold"
+                  aria-hidden
+                />
                 <a className="hover:text-gold" href={`mailto:${company.email}`}>
                   {company.email}
                 </a>
@@ -45,7 +68,9 @@ export function Footer({ company, destinations, packages }: ShellContent) {
           </div>
 
           <nav aria-label="Quick links">
-            <h3 className="text-sm font-bold uppercase tracking-[0.2em] text-gold">Company</h3>
+            <h3 className="text-sm font-bold uppercase tracking-[0.2em] text-gold">
+              Company
+            </h3>
             <ul className="mt-5 space-y-3 text-sm text-primary-foreground/75">
               {[
                 { label: "About us", to: "/about" as const },
@@ -65,7 +90,9 @@ export function Footer({ company, destinations, packages }: ShellContent) {
           </nav>
 
           <nav aria-label="Destinations">
-            <h3 className="text-sm font-bold uppercase tracking-[0.2em] text-gold">Destinations</h3>
+            <h3 className="text-sm font-bold uppercase tracking-[0.2em] text-gold">
+              Destinations
+            </h3>
             <ul className="mt-5 space-y-3 text-sm text-primary-foreground/75">
               {destinations.slice(0, 6).map((d) => (
                 <li key={d.slug}>
@@ -82,38 +109,28 @@ export function Footer({ company, destinations, packages }: ShellContent) {
           </nav>
 
           <div>
-            <h3 className="text-sm font-bold uppercase tracking-[0.2em] text-gold">Journal</h3>
+            <h3 className="text-sm font-bold uppercase tracking-[0.2em] text-gold">
+              Journal
+            </h3>
             <p className="mt-5 text-sm leading-relaxed text-primary-foreground/70">
-              Seasonal route notes, permit changes and quiet-season offers. One considered email a month.
+              Seasonal route notes, permit changes and quiet-season offers. One
+              considered email a month.
             </p>
-            <form
-              className="mt-5 flex items-center gap-2 rounded-full border border-primary-foreground/20 bg-primary-foreground/10 p-1.5"
-              onSubmit={(e) => e.preventDefault()}
-            >
-              <label className="sr-only" htmlFor="newsletter">
-                Email address
-              </label>
-              <input
-                id="newsletter"
-                type="email"
-                required
-                placeholder="you@example.com"
-                className="w-full min-w-0 bg-transparent px-3 text-sm text-primary-foreground outline-none placeholder:text-primary-foreground/50"
-              />
-              <button
-                type="submit"
-                aria-label="Subscribe to the newsletter"
-                className="bg-gold-gradient grid h-9 w-9 shrink-0 place-items-center rounded-full text-gold-foreground transition-transform hover:scale-105"
-              >
-                <Send className="h-4 w-4" aria-hidden />
-              </button>
-            </form>
+            <div className="mt-5">
+              <NewsletterForm source="footer" dark />
+            </div>
 
-            <h3 className="mt-8 text-sm font-bold uppercase tracking-[0.2em] text-gold">Top packages</h3>
+            <h3 className="mt-8 text-sm font-bold uppercase tracking-[0.2em] text-gold">
+              Top packages
+            </h3>
             <ul className="mt-4 space-y-2 text-sm text-primary-foreground/75">
               {packages.slice(0, 4).map((p) => (
                 <li key={p.slug}>
-                  <Link to="/packages/$slug" params={{ slug: p.slug }} className="transition-colors hover:text-gold">
+                  <Link
+                    to="/packages/$slug"
+                    params={{ slug: p.slug }}
+                    className="transition-colors hover:text-gold"
+                  >
                     {p.title}
                   </Link>
                 </li>
@@ -124,7 +141,8 @@ export function Footer({ company, destinations, packages }: ShellContent) {
 
         <div className="mt-14 flex flex-col-reverse items-center justify-between gap-6 border-t border-primary-foreground/15 pt-8 sm:flex-row">
           <p className="text-xs text-primary-foreground/60">
-            © {new Date().getFullYear()} Nepal Heaven Travels &amp; Tours Pvt. Ltd. All rights reserved.
+            © {new Date().getFullYear()} Nepal Heaven Travels &amp; Tours Pvt.
+            Ltd. All rights reserved.
           </p>
           <ul className="flex items-center gap-3">
             {[

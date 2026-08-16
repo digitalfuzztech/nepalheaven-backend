@@ -22,6 +22,7 @@ import {
   Sunrise,
   Compass,
   Quote,
+  MessageCircle,
   type LucideIcon,
 } from "lucide-react";
 import { getHomeContentFn } from "@/lib/content.functions";
@@ -35,7 +36,9 @@ import { Counter } from "@/components/Counter";
 import { CtaBanner } from "@/components/CtaBanner";
 import { TrustMarquee } from "@/components/TrustMarquee";
 import { ImmersiveBand } from "@/components/ImmersiveBand";
+import { NewsletterForm } from "@/components/NewsletterForm";
 import { useParallax } from "@/components/Parallax";
+import { WhatsAppLink } from "@/components/WhatsAppLink";
 
 const iconMap: Record<string, LucideIcon> = {
   ShieldCheck,
@@ -64,7 +67,10 @@ export const Route = createFileRoute("/")({
         content:
           "Discover unforgettable adventures across Nepal with expertly crafted journeys — Everest, Annapurna, Mustang, Chitwan and beyond.",
       },
-      { property: "og:title", content: "Nepal Heaven — Heaven on Earth Awaits" },
+      {
+        property: "og:title",
+        content: "Nepal Heaven — Heaven on Earth Awaits",
+      },
       {
         property: "og:description",
         content: "Expertly crafted private journeys across the Nepal Himalaya.",
@@ -93,10 +99,31 @@ function Home() {
       <ReviewsAndStats />
       <GalleryPreview />
       <Stories />
+      <NewsletterBand />
       <div className="pb-24">
         <CtaBanner />
       </div>
     </>
+  );
+}
+
+function NewsletterBand() {
+  return (
+    <section className="bg-sand py-20">
+      <div className="container-lux mx-auto grid max-w-4xl gap-8 rounded-[2rem] border border-gold/20 bg-card p-8 md:grid-cols-[1fr_22rem] md:items-center md:p-12">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-gold">
+            The Nepal Heaven journal
+          </p>
+          <h2 className="mt-3 text-3xl">A considered note from Nepal</h2>
+          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+            Seasonal route advice, thoughtful travel inspiration and occasional
+            offers. Unsubscribe whenever you wish.
+          </p>
+        </div>
+        <NewsletterForm source="homepage" />
+      </div>
+    </section>
   );
 }
 
@@ -117,7 +144,9 @@ function Hero() {
         alt="Mount Everest at sunrise above a sea of clouds"
         width={1920}
         height={1088}
-        style={{ transform: `translate3d(0, ${offset * 0.35}px, 0) scale(1.12)` }}
+        style={{
+          transform: `translate3d(0, ${offset * 0.35}px, 0) scale(1.12)`,
+        }}
         className="absolute inset-0 h-full w-full object-cover will-change-transform"
       />
       <div className="bg-veil absolute inset-0" />
@@ -138,10 +167,14 @@ function Hero() {
             className="animate-reveal mt-7 max-w-xl text-lg leading-relaxed text-primary-foreground/85"
             style={{ animationDelay: "240ms" }}
           >
-            Discover unforgettable adventures across Nepal with expertly crafted journeys — led by Sherpa guides who
-            have walked these valleys their whole lives.
+            Discover unforgettable adventures across Nepal with expertly crafted
+            journeys — led by Sherpa guides who have walked these valleys their
+            whole lives.
           </p>
-          <div className="animate-reveal mt-10 flex flex-wrap gap-4" style={{ animationDelay: "360ms" }}>
+          <div
+            className="animate-reveal mt-10 flex flex-wrap gap-4"
+            style={{ animationDelay: "360ms" }}
+          >
             <Link
               to="/packages"
               className="bg-gold-gradient shadow-glow inline-flex items-center gap-2 rounded-full px-8 py-4 text-sm font-bold text-gold-foreground transition-transform duration-300 hover:scale-[1.04]"
@@ -155,6 +188,13 @@ function Hero() {
             >
               Plan My Trip
             </Link>
+            <WhatsAppLink
+              context="homepage"
+              className="glass-dark inline-flex items-center gap-2 rounded-full px-8 py-4 text-sm font-bold text-primary-foreground transition-colors duration-300 hover:text-gold"
+            >
+              <MessageCircle className="h-4 w-4" aria-hidden />
+              WhatsApp us
+            </WhatsAppLink>
           </div>
 
           <dl
@@ -167,28 +207,40 @@ function Hero() {
               { k: "24/7", v: "Kathmandu support desk" },
             ].map((s) => (
               <div key={s.k}>
-                <dt className="font-[family-name:var(--font-display)] text-2xl font-semibold text-gold">{s.k}</dt>
-                <dd className="mt-1 text-xs uppercase tracking-[0.18em] text-primary-foreground/70">{s.v}</dd>
+                <dt className="font-[family-name:var(--font-display)] text-2xl font-semibold text-gold">
+                  {s.k}
+                </dt>
+                <dd className="mt-1 text-xs uppercase tracking-[0.18em] text-primary-foreground/70">
+                  {s.v}
+                </dd>
               </div>
             ))}
           </dl>
         </div>
 
         {/* Floating live-journey cards */}
-        <div className="animate-reveal hidden lg:block" style={{ animationDelay: "620ms" }}>
+        <div
+          className="animate-reveal hidden lg:block"
+          style={{ animationDelay: "620ms" }}
+        >
           <div className="animate-float glass-dark ml-auto max-w-sm rounded-[1.75rem] p-6">
             <div className="flex items-center gap-3">
               <span className="animate-pulse-ring grid h-10 w-10 place-items-center rounded-full bg-gold-gradient text-gold-foreground">
                 <Sunrise className="h-4.5 w-4.5" aria-hidden />
               </span>
               <div>
-                <p className="text-sm font-semibold text-primary-foreground">Kala Patthar, 05:41</p>
-                <p className="text-xs text-primary-foreground/65">Group of 6 · first light on Everest</p>
+                <p className="text-sm font-semibold text-primary-foreground">
+                  Kala Patthar, 05:41
+                </p>
+                <p className="text-xs text-primary-foreground/65">
+                  Group of 6 · first light on Everest
+                </p>
               </div>
             </div>
             <div className="mt-5 h-px w-full bg-primary-foreground/15" />
             <p className="mt-5 text-sm leading-relaxed text-primary-foreground/80">
-              “Twelve days of walking and then the whole range turns gold at once. Nobody said a word.”
+              “Twelve days of walking and then the whole range turns gold at
+              once. Nobody said a word.”
             </p>
           </div>
 
@@ -200,8 +252,10 @@ function Hero() {
               <MapPin className="h-4.5 w-4.5" aria-hidden />
             </span>
             <p className="text-xs leading-relaxed text-primary-foreground/80">
-              <span className="font-semibold text-primary-foreground">8 regions</span> operated in-house — no
-              subcontracted crews, ever.
+              <span className="font-semibold text-primary-foreground">
+                8 regions
+              </span>{" "}
+              operated in-house — no subcontracted crews, ever.
             </p>
           </div>
         </div>
@@ -224,7 +278,10 @@ function Hero() {
 function SearchBand() {
   const { destinations } = Route.useLoaderData();
   return (
-    <section id="discover" className="container-lux relative z-10 -mt-14 sm:-mt-16">
+    <section
+      id="discover"
+      className="container-lux relative z-10 -mt-14 sm:-mt-16"
+    >
       <Reveal>
         <BookingSearchCard destinations={destinations} />
       </Reveal>
@@ -263,7 +320,9 @@ function StoryIntro() {
             />
           </div>
           <div className="glass-card animate-float absolute -left-4 top-8 rounded-2xl px-5 py-4 sm:-left-8">
-            <p className="font-[family-name:var(--font-display)] text-2xl font-semibold text-gold">15 yrs</p>
+            <p className="font-[family-name:var(--font-display)] text-2xl font-semibold text-gold">
+              15 yrs
+            </p>
             <p className="mt-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
               In the Himalaya
             </p>
@@ -278,16 +337,38 @@ function StoryIntro() {
           />
           <div className="mt-10 grid gap-5 sm:grid-cols-2">
             {[
-              { icon: Compass, title: "Written, not templated", detail: "Every route is drafted for your pace, season and altitude tolerance." },
-              { icon: Mountain, title: "Walked in advance", detail: "Our guides re-scout each trail before departure season opens." },
-              { icon: HeartPulse, title: "Altitude-first safety", detail: "Oximeters, satellite comms and evacuation cover on every trek." },
-              { icon: Headphones, title: "One person, start to end", detail: "A named Kathmandu planner stays with you from enquiry to homecoming." },
+              {
+                icon: Compass,
+                title: "Written, not templated",
+                detail:
+                  "Every route is drafted for your pace, season and altitude tolerance.",
+              },
+              {
+                icon: Mountain,
+                title: "Walked in advance",
+                detail:
+                  "Our guides re-scout each trail before departure season opens.",
+              },
+              {
+                icon: HeartPulse,
+                title: "Altitude-first safety",
+                detail:
+                  "Oximeters, satellite comms and evacuation cover on every trek.",
+              },
+              {
+                icon: Headphones,
+                title: "One person, start to end",
+                detail:
+                  "A named Kathmandu planner stays with you from enquiry to homecoming.",
+              },
             ].map((item, i) => (
               <Reveal key={item.title} delay={i * 80}>
                 <div className="hairline hover-lift h-full rounded-2xl bg-card/70 p-6 backdrop-blur-sm">
                   <item.icon className="h-5 w-5 text-gold" aria-hidden />
                   <h3 className="mt-4 text-base">{item.title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{item.detail}</p>
+                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                    {item.detail}
+                  </p>
                 </div>
               </Reveal>
             ))}
@@ -316,7 +397,10 @@ function PopularDestinations() {
             className="group inline-flex items-center gap-2 text-sm font-bold text-primary transition-colors hover:text-gold"
           >
             All destinations
-            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" aria-hidden />
+            <ArrowRight
+              className="h-4 w-4 transition-transform group-hover:translate-x-1"
+              aria-hidden
+            />
           </Link>
         </div>
 
@@ -337,10 +421,15 @@ function PopularDestinations() {
               <div className="relative mt-auto grid gap-8 p-8 sm:p-12 lg:grid-cols-[1.3fr_1fr] lg:items-end">
                 <div>
                   <span className="glass-dark inline-flex items-center gap-2 rounded-full px-4 py-2 text-[0.65rem] font-bold uppercase tracking-[0.2em] text-primary-foreground">
-                    <Star className="h-3.5 w-3.5 fill-current text-gold" aria-hidden />
+                    <Star
+                      className="h-3.5 w-3.5 fill-current text-gold"
+                      aria-hidden
+                    />
                     Most requested region
                   </span>
-                  <h3 className="mt-6 text-4xl leading-tight text-primary-foreground sm:text-5xl">{featured.name}</h3>
+                  <h3 className="mt-6 text-4xl leading-tight text-primary-foreground sm:text-5xl">
+                    {featured.name}
+                  </h3>
                   <p className="mt-4 max-w-xl text-base leading-relaxed text-primary-foreground/80">
                     {featured.short}
                   </p>
@@ -355,7 +444,9 @@ function PopularDestinations() {
                       <dt className="text-[0.6rem] font-bold uppercase tracking-[0.18em] text-primary-foreground/60">
                         {s.k}
                       </dt>
-                      <dd className="mt-1.5 text-xs font-semibold text-primary-foreground">{s.v}</dd>
+                      <dd className="mt-1.5 text-xs font-semibold text-primary-foreground">
+                        {s.v}
+                      </dd>
                     </div>
                   ))}
                 </dl>
@@ -377,12 +468,16 @@ function PopularDestinations() {
 function MomentBand() {
   const { images } = Route.useLoaderData();
   return (
-    <ImmersiveBand image={images.destMustang} alt="Upper Mustang high desert cliffs at golden hour">
+    <ImmersiveBand
+      image={images.destMustang}
+      alt="Upper Mustang high desert cliffs at golden hour"
+    >
       <div className="max-w-3xl">
         <Quote className="h-10 w-10 text-gold" aria-hidden />
         <p className="mt-8 font-[family-name:var(--font-display)] text-3xl leading-[1.2] text-primary-foreground sm:text-4xl lg:text-[3.25rem]">
-          There is a moment, usually around the fourth morning, when the mountains stop being scenery and start
-          being <span className="text-gradient-gold">the reason you came.</span>
+          There is a moment, usually around the fourth morning, when the
+          mountains stop being scenery and start being{" "}
+          <span className="text-gradient-gold">the reason you came.</span>
         </p>
         <p className="mt-8 text-sm font-semibold uppercase tracking-[0.24em] text-primary-foreground/70">
           Pemba Sherpa · Head of mountain operations
@@ -439,7 +534,10 @@ function TopPackages() {
               className="group hairline inline-flex items-center gap-2 rounded-full bg-card px-8 py-4 text-sm font-bold text-primary shadow-[var(--shadow-soft)] transition-colors hover:text-gold"
             >
               See all 250+ journeys
-              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" aria-hidden />
+              <ArrowRight
+                className="h-4 w-4 transition-transform group-hover:translate-x-1"
+                aria-hidden
+              />
             </Link>
           </div>
         </Reveal>
@@ -469,7 +567,9 @@ function Adventures() {
                     <Icon className="h-5 w-5" aria-hidden />
                   </span>
                   <h3 className="mt-6 text-lg">{a.name}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{a.detail}</p>
+                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                    {a.detail}
+                  </p>
                 </div>
               </Reveal>
             );
@@ -484,8 +584,14 @@ function WhyUs() {
   const { whyUs: whyUsItems } = Route.useLoaderData();
   return (
     <section className="bg-summit grain relative overflow-hidden py-24 lg:py-32">
-      <div aria-hidden className="pointer-events-none absolute -left-20 top-10 h-80 w-80 rounded-full bg-gold/15 blur-3xl" />
-      <div aria-hidden className="animate-drift pointer-events-none absolute -right-16 bottom-0 h-72 w-72 rounded-full bg-gold/10 blur-3xl" />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -left-20 top-10 h-80 w-80 rounded-full bg-gold/15 blur-3xl"
+      />
+      <div
+        aria-hidden
+        className="animate-drift pointer-events-none absolute -right-16 bottom-0 h-72 w-72 rounded-full bg-gold/10 blur-3xl"
+      />
       <div className="container-lux relative">
         <SectionHeading
           eyebrow="Why Nepal Heaven"
@@ -501,8 +607,12 @@ function WhyUs() {
               <Reveal key={w.title} as="li" delay={i * 70}>
                 <div className="glass-dark h-full rounded-3xl p-8 transition-transform duration-500 hover:-translate-y-2">
                   <Icon className="h-7 w-7 text-gold" aria-hidden />
-                  <h3 className="mt-6 text-xl text-primary-foreground">{w.title}</h3>
-                  <p className="mt-3 text-sm leading-relaxed text-primary-foreground/70">{w.detail}</p>
+                  <h3 className="mt-6 text-xl text-primary-foreground">
+                    {w.title}
+                  </h3>
+                  <p className="mt-3 text-sm leading-relaxed text-primary-foreground/70">
+                    {w.detail}
+                  </p>
                 </div>
               </Reveal>
             );
@@ -553,13 +663,19 @@ function GalleryPreview() {
     <section className="section-band py-24 lg:py-32">
       <div className="container-lux">
         <div className="flex flex-wrap items-end justify-between gap-8">
-          <SectionHeading eyebrow="From the field" title="Photographed on our journeys" />
+          <SectionHeading
+            eyebrow="From the field"
+            title="Photographed on our journeys"
+          />
           <Link
             to="/gallery"
             className="group inline-flex items-center gap-2 text-sm font-bold text-primary transition-colors hover:text-gold"
           >
             Open gallery
-            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" aria-hidden />
+            <ArrowRight
+              className="h-4 w-4 transition-transform group-hover:translate-x-1"
+              aria-hidden
+            />
           </Link>
         </div>
         <ul className="mt-12 columns-2 gap-4 [column-fill:_balance] sm:columns-3 lg:columns-4">
@@ -567,7 +683,12 @@ function GalleryPreview() {
             <li key={g.title} className="mb-4 break-inside-avoid">
               <Reveal delay={i * 50}>
                 <figure className="zoom-media group relative overflow-hidden rounded-2xl">
-                  <img src={g.image} alt={g.title} loading="lazy" className="w-full object-cover" />
+                  <img
+                    src={g.image}
+                    alt={g.title}
+                    loading="lazy"
+                    className="w-full object-cover"
+                  />
                   <figcaption className="bg-veil absolute inset-x-0 bottom-0 p-4 text-xs font-semibold text-primary-foreground opacity-0 transition-opacity duration-500 group-hover:opacity-100">
                     {g.title}
                   </figcaption>
@@ -596,7 +717,10 @@ function Stories() {
           className="group inline-flex items-center gap-2 text-sm font-bold text-primary transition-colors hover:text-gold"
         >
           Read the journal
-          <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" aria-hidden />
+          <ArrowRight
+            className="h-4 w-4 transition-transform group-hover:translate-x-1"
+            aria-hidden
+          />
         </Link>
       </div>
       <div className="mt-14 grid gap-6 md:grid-cols-3">
@@ -608,15 +732,26 @@ function Stories() {
               className="hover-lift group flex h-full flex-col overflow-hidden rounded-3xl border border-border bg-card"
             >
               <div className="zoom-media aspect-[16/10]">
-                <img src={p.image} alt={p.title} loading="lazy" className="h-full w-full object-cover" />
+                <img
+                  src={p.image}
+                  alt={p.title}
+                  loading="lazy"
+                  className="h-full w-full object-cover"
+                />
               </div>
               <div className="flex flex-1 flex-col p-7">
                 <div className="flex items-center gap-3 text-xs font-semibold text-muted-foreground">
-                  <span className="rounded-full bg-accent px-2.5 py-1 text-accent-foreground">{p.category}</span>
+                  <span className="rounded-full bg-accent px-2.5 py-1 text-accent-foreground">
+                    {p.category}
+                  </span>
                   <span>{p.readingTime}</span>
                 </div>
-                <h3 className="mt-4 text-xl leading-snug transition-colors group-hover:text-primary">{p.title}</h3>
-                <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-muted-foreground">{p.excerpt}</p>
+                <h3 className="mt-4 text-xl leading-snug transition-colors group-hover:text-primary">
+                  {p.title}
+                </h3>
+                <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-muted-foreground">
+                  {p.excerpt}
+                </p>
                 <span className="mt-auto pt-6 text-xs font-semibold uppercase tracking-[0.18em] text-gold">
                   {p.date}
                 </span>
@@ -632,7 +767,9 @@ function Stories() {
             <Star className="h-4 w-4 fill-current text-gold" aria-hidden />
             Rated 4.9 on Tripadvisor
           </span>
-          <span className="text-sm text-muted-foreground">Nepal Tourism Board licensed · TAAN member · NMA certified guides</span>
+          <span className="text-sm text-muted-foreground">
+            Nepal Tourism Board licensed · TAAN member · NMA certified guides
+          </span>
         </div>
       </Reveal>
     </section>

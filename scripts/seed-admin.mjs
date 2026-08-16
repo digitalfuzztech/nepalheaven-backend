@@ -43,13 +43,13 @@ const [existing] = await connection.execute(
 );
 if (existing.length) {
   await connection.execute(
-    "UPDATE users SET role = 'admin', password_hash = ?, name = 'Nepal Heaven Admin', updated_at = NOW() WHERE email = ?",
+    "UPDATE users SET role = 'admin', password_hash = ?, name = 'Nepal Heaven Admin', email_verified_at = COALESCE(email_verified_at, NOW(3)), updated_at = NOW() WHERE email = ?",
     [hash, email],
   );
   console.log(`Admin account updated: ${email}`);
 } else {
   await connection.execute(
-    "INSERT INTO users (id, role, name, email, password_hash) VALUES (?, 'admin', 'Nepal Heaven Admin', ?, ?)",
+    "INSERT INTO users (id, role, name, email, password_hash, email_verified_at) VALUES (?, 'admin', 'Nepal Heaven Admin', ?, ?, NOW(3))",
     [randomUUID(), email, hash],
   );
   console.log(`Admin account created: ${email}`);

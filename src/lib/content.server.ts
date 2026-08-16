@@ -24,6 +24,8 @@ import {
   packages,
   packageTiers,
 } from "@/db/schema/packages";
+import { experienceCategories, experienceHighlights, experiencePackages } from "@/db/schema/experiences";
+import { media } from "@/db/schema/media";
 import { resolveAssetReference } from "@/lib/asset-resolver";
 import type {
   Activity,
@@ -43,6 +45,7 @@ import type {
   TeamMember,
   Testimonial,
   WhyUsItem,
+  PublicSearchResults,
 } from "@/lib/content.types";
 
 const publicSettingKeys = [
@@ -297,10 +300,10 @@ export async function getPackages(): Promise<Package[]> {
         ? primaryDestinationById.get(row.destinationId)?.name
         : undefined) ??
       "",
-    destinations: (destinationsByPackage.get(row.id) ?? []).map((item) => ({
-      slug: item.destination.slug,
-      name: item.destination.name,
-    })),
+    destinations: [...new Map([
+      ...(row.destinationId && primaryDestinationById.get(row.destinationId) ? [{ slug: primaryDestinationById.get(row.destinationId)!.slug, name: primaryDestinationById.get(row.destinationId)!.name }] : []),
+      ...(destinationsByPackage.get(row.id) ?? []).map((item) => ({ slug: item.destination.slug, name: item.destination.name })),
+    ].map((item) => [item.slug, item])).values()],
     image: resolveAssetReference(row.heroImage),
     days: row.days ?? 0,
     price: Number(row.startingPrice ?? 0),
@@ -333,6 +336,33 @@ export async function getPackages(): Promise<Package[]> {
 export async function getPackageBySlug(slug: string): Promise<Package | null> {
   const packages = await getPackages();
   return packages.find((packageItem) => packageItem.slug === slug) ?? null;
+}
+export async function getExperiences(): Promise<ExperienceCategory[]> {
+  const database = requireDb();
+  const rows = await database.select().from(experienceCategories).where(eq(experienceCategories.status, true)).orderBy(asc(experienceCategories.sortOrder));
+  if (!rows.length) return [];
+  const ids = rows.map((row) => row.id);
+  const [highlights, links, packageRows, publicPackages] = await Promise.all([
+    database.select().from(experienceHighlights).where(inArray(experienceHighlights.experienceId, ids)).orderBy(asc(experienceHighlights.sortOrder)),
+    database.select().from(experiencePackages).where(inArray(experiencePackages.experienceId, ids)).orderBy(asc(experiencePackages.sortOrder)),
+    database.select({ id: packages.id, slug: packages.slug }).from(packages).where(eq(packages.status, true)), getPackages(),
+  ]);
+  const highlightsByExperience = groupBy(highlights, (item) => item.experienceId);
+  const linksByExperience = groupBy(links, (item) => item.experienceId);
+  const slugById = new Map(packageRows.map((item) => [item.id, item.slug]));
+  const packageBySlug = new Map(publicPackages.map((item) => [item.slug, item]));
+  return rows.map((row) => {
+    const related = (linksByExperience.get(row.id) ?? []).map((link) => packageBySlug.get(slugById.get(link.packageId) ?? "")).filter((item): item is Package => Boolean(item));
+    return { slug: row.slug, name: row.name, short: row.shortDescription ?? "", detail: row.shortDescription ?? "", description: row.description ?? "", image: resolveAssetReference(row.heroImage), count: related.length, highlights: (highlightsByExperience.get(row.id) ?? []).map((item) => item.item), packages: related, seoTitle: row.seoTitle ?? `${row.name} Experiences | Nepal Heaven`, seoDescription: row.seoDescription ?? row.shortDescription ?? "" };
+  });
+}
+export async function getExperienceBySlug(slug: string) { return (await getExperiences()).find((item) => item.slug === slug) ?? null; }
+export async function searchPublicContent(query: string): Promise<PublicSearchResults> {
+  const normalized = query.trim().toLocaleLowerCase();
+  if (!normalized) return { query: "", destinations: [], packages: [], experiences: [], articles: [] };
+  const [allDestinations, allPackages, allExperiences, allArticles] = await Promise.all([getDestinations(), getPackages(), getExperiences(), getBlogPosts()]);
+  const matches = (...values: (string | string[])[]) => values.flat().join(" ").toLocaleLowerCase().includes(normalized);
+  return { query: query.trim(), destinations: allDestinations.filter((x) => matches(x.name, x.region, x.category, x.short)), packages: allPackages.filter((x) => matches(x.title, x.destination, x.style, x.difficulty, x.highlights)), experiences: allExperiences.filter((x) => matches(x.name, x.short, x.description)), articles: allArticles.filter((x) => matches(x.title, x.excerpt, x.category)) };
 }
 
 export async function getBlogPosts(): Promise<Post[]> {
@@ -464,7 +494,7 @@ export async function getPublicSiteSettings(): Promise<PublicSiteSettings> {
     isArray,
   );
   const experienceCategories = resolveImageItems(
-    parseJsonSetting<ExperienceCategory[]>(
+    parseJsonSetting<PublicSiteSettings["experienceCategories"]>(
       values,
       "experiences.categories",
       [],
@@ -472,9 +502,22 @@ export async function getPublicSiteSettings(): Promise<PublicSiteSettings> {
     ),
   );
   const stats = parseJsonSetting<Stat[]>(values, "home.stats", [], isArray);
-  const galleryItems = resolveImageItems(
-    parseJsonSetting<GalleryItem[]>(values, "gallery.items", [], isArray),
-  );
+  const settingGalleryItems = parseJsonSetting<GalleryItem[]>(values, "gallery.items", [], isArray).map((item) => ({ ...item, type: item.type === "video" ? "video" as const : "image" as const, ...(item.image ? { image: resolveAssetReference(item.image) } : {}), ...(item.thumbnail ? { thumbnail: resolveAssetReference(item.thumbnail) } : {}) }));
+  const mediaRows = await database.select().from(media).orderBy(asc(media.createdAt));
+  const mediaUrl = (value: string) => value.startsWith("/") ? value : resolveAssetReference(value) || value;
+  const galleryItems: GalleryItem[] = [
+    ...settingGalleryItems,
+    ...mediaRows.map((item) => ({
+      type: item.type,
+      ...(item.type === "image" ? { image: mediaUrl(item.url) } : { videoUrl: mediaUrl(item.url) }),
+      ...(item.thumbnailUrl ? { thumbnail: mediaUrl(item.thumbnailUrl) } : {}),
+      ...(item.provider ? { provider: item.provider } : {}),
+      ...(item.caption ? { caption: item.caption } : {}),
+      title: item.title ?? item.altText ?? (item.type === "video" ? "Nepal Heaven video" : "Nepal Heaven photograph"),
+      category: "Uncategorised",
+      span: "normal",
+    })),
+  ];
   const team = parseJsonSetting<TeamMember[]>(
     values,
     "about.team",

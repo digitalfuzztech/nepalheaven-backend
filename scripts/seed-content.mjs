@@ -192,6 +192,9 @@ async function synchronizeManifestRows(tx, previousManifest, currentManifest) {
     "package_itineraries",
     "package_inclusions",
     "package_exclusions",
+    "experience_categories",
+    "experience_highlights",
+    "experience_packages",
     "blog_posts",
     "blog_categories",
     "testimonials",
@@ -487,6 +490,25 @@ try {
       }
     }
 
+    for (const [sortOrder, experience] of data.experienceCategories.entries()) {
+      const id = stableUuid(`experience_categories:${experience.slug}`);
+      addManifestId(manifest, "experience_categories", id);
+      await tx`INSERT INTO experience_categories (id, slug, name, short_description, description, hero_image, sort_order, status, seo_title, seo_description, updated_at)
+        VALUES (${id}, ${experience.slug}, ${experience.name}, ${experience.detail}, ${experience.description}, ${experience.image}, ${sortOrder}, true, ${`${experience.name} Experiences in Nepal | Nepal Heaven`}, ${experience.detail}, NOW())
+        ON DUPLICATE KEY UPDATE name=VALUES(name), short_description=VALUES(short_description), description=VALUES(description), hero_image=VALUES(hero_image), sort_order=VALUES(sort_order), status=true, seo_title=VALUES(seo_title), seo_description=VALUES(seo_description), updated_at=NOW()`;
+      const [row] = await tx`SELECT id FROM experience_categories WHERE slug=${experience.slug} LIMIT 1`;
+      if (!row) throw new Error(`Experience upsert failed: ${experience.slug}`);
+      for (const [index, item] of experience.highlights.entries()) {
+        const childId = stableUuid(`experience_highlights:${experience.slug}:${index}`); addManifestId(manifest, "experience_highlights", childId);
+        await tx`INSERT INTO experience_highlights (id, experience_id, item, sort_order) VALUES (${childId}, ${row.id}, ${item}, ${index}) ON DUPLICATE KEY UPDATE experience_id=VALUES(experience_id), item=VALUES(item), sort_order=VALUES(sort_order)`;
+      }
+      for (const [index, packageSlug] of (data.experiencePackageMappings[experience.slug] ?? []).entries()) {
+        const packageId = packageIds.get(packageSlug); if (!packageId) throw new Error(`Experience ${experience.slug} references missing package ${packageSlug}`);
+        const childId = stableUuid(`experience_packages:${experience.slug}:${packageSlug}`); addManifestId(manifest, "experience_packages", childId);
+        await tx`INSERT INTO experience_packages (id, experience_id, package_id, sort_order) VALUES (${childId}, ${row.id}, ${packageId}, ${index}) ON DUPLICATE KEY UPDATE experience_id=VALUES(experience_id), package_id=VALUES(package_id), sort_order=VALUES(sort_order)`;
+      }
+    }
+
     const categoryIds = new Map();
     for (const categoryName of [
       ...new Set(data.posts.map((post) => post.category)),
@@ -622,6 +644,8 @@ try {
       assetImports: assetImportCount,
       packageDestinationLinks:
         manifest.tables.package_destinations?.length ?? 0,
+      experiences: data.experienceCategories.length,
+      experiencePackageLinks: manifest.tables.experience_packages?.length ?? 0,
     };
   });
 

@@ -77,18 +77,33 @@ export type Company = {
 
 export type Activity = { name: string; detail: string; icon: string };
 export type ExperienceCategory = {
+  slug: string;
   name: string;
+  short: string;
+  description: string;
   detail: string;
   image: string;
   count: number;
+  highlights: string[];
+  packages: Package[];
+  seoTitle: string;
+  seoDescription: string;
 };
 export type Stat = { value: number; suffix: string; label: string };
 export type GalleryItem = {
-  image: string;
+  type: "image" | "video";
+  image?: string;
+  videoUrl?: string;
+  thumbnail?: string;
+  provider?: string;
   title: string;
   category: string;
   span: string;
+  caption?: string;
 };
+export type BlogComment = { id: string; customerName: string; avatarUrl?: string; content: string; createdAt: string };
+export type BlogEngagement = { likeCount: number; hasLiked: boolean; averageRating: number | null; ratingCount: number; currentUserRating: number | null; comments: BlogComment[] };
+export type PublicSearchResults = { query: string; destinations: Destination[]; packages: Package[]; experiences: ExperienceCategory[]; articles: Post[] };
 export type TeamMember = { name: string; role: string; bio: string };
 export type Milestone = { year: string; title: string; detail: string };
 export type WhyUsItem = { title: string; detail: string; icon: string };
@@ -111,7 +126,7 @@ export type SiteImages = {
 export type PublicSiteSettings = {
   company: Company;
   activities: Activity[];
-  experienceCategories: ExperienceCategory[];
+  experienceCategories: LegacyExperienceCategory[];
   stats: Stat[];
   galleryItems: GalleryItem[];
   team: TeamMember[];
@@ -121,6 +136,7 @@ export type PublicSiteSettings = {
   whyUs: WhyUsItem[];
   images: SiteImages;
 };
+type LegacyExperienceCategory = { name: string; detail: string; image: string; count?: number };
 
 export type HomeContent = PublicSiteSettings & {
   destinations: Destination[];

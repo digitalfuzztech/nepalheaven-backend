@@ -4,15 +4,19 @@ import { getBlogPostBySlugFn, getBlogPostsFn } from "@/lib/content.functions";
 import { PageHero } from "@/components/PageHero";
 import { Reveal } from "@/components/Reveal";
 import { CtaBanner } from "@/components/CtaBanner";
+import { BlogEngagement } from "@/components/BlogEngagement";
+import { getBlogEngagementFn } from "@/lib/blog-engagement.functions";
 
 export const Route = createFileRoute("/blog/$slug")({
   loader: async ({ params }) => {
-    const [post, posts] = await Promise.all([
+    const [post, posts, engagement] = await Promise.all([
       getBlogPostBySlugFn({ data: { slug: params.slug } }),
       getBlogPostsFn(),
+      getBlogEngagementFn({ data: { slug: params.slug } }),
     ]);
     if (!post) throw notFound();
-    return { post, posts };
+    if (!engagement) throw notFound();
+    return { post, posts, engagement };
   },
   head: ({ loaderData, params }) => {
     if (!loaderData) {
@@ -48,7 +52,7 @@ export const Route = createFileRoute("/blog/$slug")({
 });
 
 function BlogPost() {
-  const { post, posts } = Route.useLoaderData();
+  const { post, posts, engagement } = Route.useLoaderData();
   const related = posts.filter((p) => p.slug !== post.slug).slice(0, 3);
 
   return (
@@ -85,6 +89,8 @@ function BlogPost() {
               </p>
             ))}
           </div>
+
+          <BlogEngagement slug={post.slug} initial={engagement} />
 
           <div className="mt-14 rounded-3xl border border-border bg-sand p-8">
             <p className="eyebrow text-gold">About the author</p>

@@ -1,13 +1,13 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useLocation } from "@tanstack/react-router";
 import { ArrowUpRight } from "lucide-react";
-import { getPublicSiteSettingsFn } from "@/lib/content.functions";
+import { getExperiencesFn, getPublicSiteSettingsFn } from "@/lib/content.functions";
 import { PageHero } from "@/components/PageHero";
 import { Reveal } from "@/components/Reveal";
 import { SectionHeading } from "@/components/SectionHeading";
 import { CtaBanner } from "@/components/CtaBanner";
 
 export const Route = createFileRoute("/experiences")({
-  loader: () => getPublicSiteSettingsFn(),
+  loader: async () => { const [experienceCategories, settings] = await Promise.all([getExperiencesFn(), getPublicSiteSettingsFn()]); return { experienceCategories, images: settings.images }; },
   head: () => ({
     meta: [
       { title: "Nepal Experiences — Adventure, Culture, Wellness | Nepal Heaven" },
@@ -26,6 +26,8 @@ export const Route = createFileRoute("/experiences")({
 });
 
 function ExperiencesPage() {
+  const pathname = useLocation().pathname;
+  if (pathname !== "/experiences" && pathname !== "/experiences/") return <Outlet />;
   const { experienceCategories, images } = Route.useLoaderData();
   return (
     <>
@@ -48,7 +50,8 @@ function ExperiencesPage() {
           {experienceCategories.map((c, i) => (
             <Reveal key={c.name} as="li" delay={i * 60}>
               <Link
-                to="/packages"
+                to="/experiences/$slug"
+                params={{ slug: c.slug }}
                 className="zoom-media hover-lift group relative flex h-full min-h-[24rem] flex-col justify-end overflow-hidden rounded-3xl"
               >
                 <img src={c.image} alt={c.name} loading="lazy" className="absolute inset-0 h-full w-full object-cover" />

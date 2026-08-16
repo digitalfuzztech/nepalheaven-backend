@@ -1,11 +1,28 @@
 import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
 
 export const registerCustomerFn = createServerFn({ method: "POST" })
-  .validator((data: FormData) => {
-    if (!(data instanceof FormData)) throw new Error("Invalid registration data.");
-    return data;
-  })
+  .validator(
+    z.object({
+      name: z.string(),
+      email: z.string(),
+      phone: z.string(),
+      nationality: z.string(),
+      dateOfBirth: z.string(),
+      password: z.string(),
+    }),
+  )
   .handler(async ({ data }) => {
+    const { enforcePublicRateLimit } =
+      await import("@/lib/public-rate-limit.server");
+    const email = data.email.trim().toLowerCase();
+    if (
+      !enforcePublicRateLimit("customer-registration", email, 5, 15 * 60 * 1000)
+    )
+      return {
+        ok: false as const,
+        message: "Too many registration attempts. Please wait and try again.",
+      };
     const { PublicRegistrationError, registerCustomer } =
       await import("@/lib/registration.server");
     try {

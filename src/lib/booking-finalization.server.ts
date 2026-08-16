@@ -85,7 +85,7 @@ export async function finalizeBookingAfterVerifiedPayment(
       "Trusted payment verification evidence is incomplete.",
     );
 
-  return db.transaction(async (transaction) => {
+  const finalizedBooking = await db.transaction(async (transaction) => {
     const [intent] = await transaction
       .select()
       .from(bookingIntents)
@@ -261,6 +261,9 @@ export async function finalizeBookingAfterVerifiedPayment(
       balanceDueDate,
       cancellationFeePercentageSnapshot:
         intent.cancellationFeePercentageSnapshot,
+      cancellationFeeTypeSnapshot: intent.cancellationFeeTypeSnapshot,
+      cancellationFeeValueSnapshot: intent.cancellationFeeValueSnapshot,
+      cancellationPolicyTextSnapshot: intent.cancellationPolicyTextSnapshot,
       cancellationPolicySourceSnapshot: intent.cancellationPolicySourceSnapshot,
       currency: intent.currency,
       notes: intent.notes,
@@ -337,4 +340,17 @@ export async function finalizeBookingAfterVerifiedPayment(
         remainingCents === 0 ? ("paid" as const) : ("partially_paid" as const),
     };
   });
+  try {
+    const { sendBookingConfirmationEmails } =
+      await import("@/lib/booking-email.server");
+    await sendBookingConfirmationEmails(finalizedBooking.id);
+  } catch (error) {
+    // Booking/payment persistence is the success boundary. Email failures must
+    // never turn a paid, confirmed booking into a failed checkout response.
+    console.error("Booking confirmation email orchestration failed", {
+      bookingReference: finalizedBooking.reference,
+      error: error instanceof Error ? error.message : "Unknown email error",
+    });
+  }
+  return finalizedBooking;
 }

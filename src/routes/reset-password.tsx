@@ -4,7 +4,7 @@ import { AuthShell } from "@/components/AuthShell";
 import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/reset-password")({
-  validateSearch: (search: Record<string, unknown>) => ({ token: typeof search.token === "string" ? search.token : "" }),
+  validateSearch: (search: Record<string, unknown>) => ({ token: typeof search["token"] === "string" ? search["token"] : "" }),
   component: ResetPasswordPage,
 });
 

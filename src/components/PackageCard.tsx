@@ -10,12 +10,14 @@ export function PackageCard({
   pkg,
   delay = 0,
   layout = "grid",
+  comparisonBaseSlug,
 }: {
   pkg: Package;
   delay?: number;
   layout?: "grid" | "row";
+  comparisonBaseSlug?: string;
 }) {
-  const [saved, setSaved] = useState(() => {
+  const [saved, setSaved] = useState<boolean>(() => {
     try { return JSON.parse(window.localStorage.getItem("nepalheaven_saved_v1") || "[]").includes(pkg.slug); } catch { return false; }
   });
   const comparison = useComparison();
@@ -112,7 +114,12 @@ export function PackageCard({
               <button
                 type="button"
                 aria-pressed={comparison.has(pkg.slug)}
-                onClick={() => comparison.toggle(pkg.slug)}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  if (comparisonBaseSlug) comparison.addMany([comparisonBaseSlug, pkg.slug]);
+                  else comparison.toggle(pkg.slug);
+                }}
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors",
                   comparison.has(pkg.slug)

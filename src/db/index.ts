@@ -1,4 +1,4 @@
-import { createPool } from "mysql2/promise";
+import { createPool, type Pool } from "mysql2/promise";
 import { drizzle } from "drizzle-orm/mysql2";
 
 const connectionString = process.env["DATABASE_URL"];
@@ -28,21 +28,42 @@ function socketConnectionOptions(uri: string, path: string) {
     password: decodeURIComponent(parsed.password),
     database,
     connectionLimit: 10,
+    maxIdle: 4,
+    idleTimeout: 60_000,
+    enableKeepAlive: true,
     timezone: "Z",
   };
 }
 
-const pool = connectionString
-  ? createPool(
-      socketPath
-        ? socketConnectionOptions(connectionString, socketPath)
-        : {
-            uri: connectionString,
-            connectionLimit: 10,
-            timezone: "Z",
-          },
-    )
+const databaseGlobal = globalThis as typeof globalThis & {
+  __nepalHeavenMysqlPool?: Pool;
+  __nepalHeavenMysqlPoolKey?: string;
+};
+const poolKey = connectionString
+  ? `${connectionString}\0${socketPath ?? "tcp"}`
   : null;
+const pool = connectionString
+  ? databaseGlobal.__nepalHeavenMysqlPool &&
+    databaseGlobal.__nepalHeavenMysqlPoolKey === poolKey
+    ? databaseGlobal.__nepalHeavenMysqlPool
+    : createPool(
+        socketPath
+          ? socketConnectionOptions(connectionString, socketPath)
+          : {
+              uri: connectionString,
+              connectionLimit: 10,
+              maxIdle: 4,
+              idleTimeout: 60_000,
+              enableKeepAlive: true,
+              timezone: "Z",
+            },
+      )
+  : null;
+
+if (pool && poolKey) {
+  databaseGlobal.__nepalHeavenMysqlPool = pool;
+  databaseGlobal.__nepalHeavenMysqlPoolKey = poolKey;
+}
 
 // Relational Query Builder v1 emits either LATERAL joins (default mode) or
 // JSON_ARRAYAGG (PlanetScale mode). Neither is portable to MariaDB 10.4, so

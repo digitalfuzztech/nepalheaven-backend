@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useLocation } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { Menu, Phone, Search, X, UserRound } from "lucide-react";
 import type { Company } from "@/lib/content.types";
 import { cn } from "@/lib/utils";
@@ -22,6 +22,8 @@ export function Navbar({ company }: { company: Company }) {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const navigate = useNavigate();
   const { user } = useAuth();
   const pathname = useLocation().pathname;
   const isAccountRoute =
@@ -34,6 +36,12 @@ export function Navbar({ company }: { company: Company }) {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
+  useEffect(() => {
+    if (!searchOpen) return;
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape") setSearchOpen(false); };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [searchOpen]);
 
   return (
     <header
@@ -156,18 +164,22 @@ export function Navbar({ company }: { company: Company }) {
 
       {searchOpen ? (
         <div className="container-lux mt-3">
-          <div className="glass-card animate-reveal flex items-center gap-3 rounded-2xl px-5 py-3">
+          <form role="search" onSubmit={(event) => { event.preventDefault(); const q = searchQuery.trim(); if (!q) return; setSearchOpen(false); void navigate({ to: "/search", search: { q } }); }} className="glass-card animate-reveal flex items-center gap-3 rounded-2xl px-5 py-3">
             <Search
               className="h-4 w-4 shrink-0 text-muted-foreground"
               aria-hidden
             />
             <input
+              autoFocus
               type="search"
               placeholder="Search destinations, treks, experiences…"
               aria-label="Search destinations"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
               className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             />
-          </div>
+            <button type="submit" disabled={!searchQuery.trim()} className="rounded-full bg-primary px-4 py-2 text-xs font-bold text-primary-foreground disabled:opacity-50">Search</button>
+          </form>
         </div>
       ) : null}
 

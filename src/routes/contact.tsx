@@ -1,18 +1,29 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
 import { Clock, Mail, MapPin, MessageCircle, Phone } from "lucide-react";
-import { getPackagesFn, getPublicSiteSettingsFn } from "@/lib/content.functions";
+import {
+  getPackagesFn,
+  getPublicSiteSettingsFn,
+} from "@/lib/content.functions";
 import { PageHero } from "@/components/PageHero";
 import { Reveal } from "@/components/Reveal";
 import { SectionHeading } from "@/components/SectionHeading";
 import { FaqAccordion } from "@/components/FaqAccordion";
-import { submitContactLeadFn, submitPackageInquiryFn } from "@/lib/lead.functions";
+import {
+  submitContactLeadFn,
+  submitPackageInquiryFn,
+} from "@/lib/lead.functions";
+import { useAuth } from "@/lib/auth";
+import { buildWhatsAppEntryPath } from "@/lib/whatsapp.functions";
 
 export const Route = createFileRoute("/contact")({
   validateSearch: (search: Record<string, unknown>): { package?: string } =>
     typeof search["package"] === "string" ? { package: search["package"] } : {},
   loader: async () => {
-    const [packages, settings] = await Promise.all([getPackagesFn(), getPublicSiteSettingsFn()]);
+    const [packages, settings] = await Promise.all([
+      getPackagesFn(),
+      getPublicSiteSettingsFn(),
+    ]);
     return { company: settings.company, images: settings.images, packages };
   },
   head: () => ({
@@ -24,7 +35,10 @@ export const Route = createFileRoute("/contact")({
           "Talk to a Kathmandu-based specialist. Phone, WhatsApp, email and office hours, plus a trip enquiry form answered within 24 hours.",
       },
       { property: "og:title", content: "Contact Nepal Heaven" },
-      { property: "og:description", content: "Reach our Kathmandu team by phone, WhatsApp or email." },
+      {
+        property: "og:description",
+        content: "Reach our Kathmandu team by phone, WhatsApp or email.",
+      },
       { property: "og:url", content: "/contact" },
     ],
     links: [{ rel: "canonical", href: "/contact" }],
@@ -34,6 +48,7 @@ export const Route = createFileRoute("/contact")({
 
 function ContactPage() {
   const { company, images, packages } = Route.useLoaderData();
+  const { user } = useAuth();
   const search = Route.useSearch();
   const [sent, setSent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -51,7 +66,11 @@ function ContactPage() {
       phone: String(formData.get("phone") ?? ""),
       travelDate: String(formData.get("dates") ?? ""),
       travellers: Number(formData.get("travellers")),
+      interestedIn: packageSlug
+        ? packages.find((item) => item.slug === packageSlug)?.title
+        : "Custom Nepal journey",
       message: String(formData.get("message") ?? ""),
+      marketingOptIn: formData.get("marketingOptIn") === "on",
     };
 
     try {
@@ -90,7 +109,8 @@ function ContactPage() {
               <div className="mt-8 rounded-3xl bg-sand p-8 text-center">
                 <h3 className="text-2xl">Thank you — your enquiry is in.</h3>
                 <p className="mt-3 text-sm text-muted-foreground">
-                  A specialist will reply within 24 hours with a draft itinerary and pricing.
+                  A specialist will reply within 24 hours with a draft itinerary
+                  and pricing.
                 </p>
                 <button
                   type="button"
@@ -105,9 +125,27 @@ function ContactPage() {
                 className="mt-8 grid gap-5 sm:grid-cols-2"
                 onSubmit={submitInquiry}
               >
-                <Field label="Full name" name="name" placeholder="Jane Doe" required />
-                <Field label="Email" name="email" type="email" placeholder="you@example.com" required />
-                <Field label="Phone / WhatsApp" name="phone" placeholder="+1 555 0100" />
+                <Field
+                  label="Full name"
+                  name="name"
+                  placeholder="Jane Doe"
+                  defaultValue={user?.name}
+                  required
+                />
+                <Field
+                  label="Email"
+                  name="email"
+                  type="email"
+                  placeholder="you@example.com"
+                  defaultValue={user?.email}
+                  required
+                />
+                <Field
+                  label="Phone / WhatsApp"
+                  name="phone"
+                  placeholder="+1 555 0100"
+                  defaultValue={user?.phone}
+                />
                 <Field label="Preferred dates" name="dates" type="date" />
                 <label className="block sm:col-span-1">
                   <span className="text-xs font-bold uppercase tracking-[0.16em] text-muted-foreground">
@@ -115,14 +153,30 @@ function ContactPage() {
                   </span>
                   <select
                     name="package"
-                    defaultValue={packages.some((item) => item.slug === search.package) ? search.package : ""}
+                    defaultValue={
+                      packages.some((item) => item.slug === search.package)
+                        ? search.package
+                        : ""
+                    }
                     className="mt-2 w-full rounded-2xl border border-border bg-background px-4 py-3.5 text-sm outline-none focus:border-gold"
                   >
                     <option value="">Not sure yet</option>
                     {packages.map((p) => (
-                      <option key={p.slug} value={p.slug}>{p.title}</option>
+                      <option key={p.slug} value={p.slug}>
+                        {p.title}
+                      </option>
                     ))}
                   </select>
+                </label>
+                <label className="flex items-start gap-3 text-sm text-muted-foreground sm:col-span-2">
+                  <input
+                    type="checkbox"
+                    name="marketingOptIn"
+                    className="mt-1"
+                  />
+                  <span>
+                    Send me Nepal travel inspiration, offers and trip updates.
+                  </span>
                 </label>
                 <label className="block sm:col-span-1">
                   <span className="text-xs font-bold uppercase tracking-[0.16em] text-muted-foreground">
@@ -139,7 +193,9 @@ function ContactPage() {
                   </select>
                 </label>
                 <label className="block sm:col-span-2">
-                  <span className="text-xs font-bold uppercase tracking-[0.16em] text-muted-foreground">Message</span>
+                  <span className="text-xs font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                    Message
+                  </span>
                   <textarea
                     name="message"
                     rows={5}
@@ -148,7 +204,11 @@ function ContactPage() {
                     className="mt-2 w-full rounded-2xl border border-border bg-background px-4 py-3.5 text-sm outline-none placeholder:text-muted-foreground focus:border-gold"
                   />
                 </label>
-                {submitError ? <p className="text-sm text-destructive sm:col-span-2">{submitError}</p> : null}
+                {submitError ? (
+                  <p className="text-sm text-destructive sm:col-span-2">
+                    {submitError}
+                  </p>
+                ) : null}
                 <button
                   type="submit"
                   disabled={submitting}
@@ -165,23 +225,48 @@ function ContactPage() {
           <Reveal>
             <ul className="space-y-4">
               {[
-                { icon: Phone, label: "Phone", value: company.phone, href: `tel:${company.phone.replace(/\s/g, "")}` },
-                { icon: MessageCircle, label: "WhatsApp", value: company.whatsapp, href: `https://wa.me/${company.whatsapp.replace(/\D/g, "")}` },
-                { icon: Mail, label: "Email", value: company.email, href: `mailto:${company.email}` },
+                {
+                  icon: Phone,
+                  label: "Phone",
+                  value: company.phone,
+                  href: `tel:${company.phone.replace(/\s/g, "")}`,
+                },
+                {
+                  icon: MessageCircle,
+                  label: "WhatsApp",
+                  value: company.whatsapp,
+                  href: buildWhatsAppEntryPath("other"),
+                },
+                {
+                  icon: Mail,
+                  label: "Email",
+                  value: company.email,
+                  href: `mailto:${company.email}`,
+                },
                 { icon: MapPin, label: "Office", value: company.address },
               ].map(({ icon: Icon, label, value, href }) => (
-                <li key={label} className="flex items-start gap-4 rounded-3xl border border-border bg-card p-6">
+                <li
+                  key={label}
+                  className="flex items-start gap-4 rounded-3xl border border-border bg-card p-6"
+                >
                   <span className="bg-summit grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-gold">
                     <Icon className="h-5 w-5" aria-hidden />
                   </span>
                   <div className="min-w-0">
-                    <p className="text-xs font-bold uppercase tracking-[0.16em] text-muted-foreground">{label}</p>
+                    <p className="text-xs font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                      {label}
+                    </p>
                     {href ? (
-                      <a href={href} className="mt-1 block font-semibold text-foreground transition-colors hover:text-gold">
+                      <a
+                        href={href}
+                        className="mt-1 block font-semibold text-foreground transition-colors hover:text-gold"
+                      >
                         {value}
                       </a>
                     ) : (
-                      <p className="mt-1 font-semibold text-foreground">{value}</p>
+                      <p className="mt-1 font-semibold text-foreground">
+                        {value}
+                      </p>
                     )}
                   </div>
                 </li>
@@ -221,13 +306,26 @@ function ContactPage() {
 
       <section className="bg-sand py-24">
         <div className="container-lux max-w-3xl">
-          <SectionHeading align="center" eyebrow="Before you write" title="Quick answers" />
+          <SectionHeading
+            align="center"
+            eyebrow="Before you write"
+            title="Quick answers"
+          />
           <div className="mt-10">
             <FaqAccordion
               items={[
-                { q: "How fast do you reply?", a: "Within 24 hours on weekdays, usually much sooner. Urgent trek-support calls are answered around the clock." },
-                { q: "Can you build a fully custom trip?", a: "Yes — most of our travellers end up with something tailored. Send dates and interests and we will draft a route." },
-                { q: "Do you work with travel agents?", a: "We do. Ask for our trade rates and we will connect you with our partnerships team." },
+                {
+                  q: "How fast do you reply?",
+                  a: "Within 24 hours on weekdays, usually much sooner. Urgent trek-support calls are answered around the clock.",
+                },
+                {
+                  q: "Can you build a fully custom trip?",
+                  a: "Yes — most of our travellers end up with something tailored. Send dates and interests and we will draft a route.",
+                },
+                {
+                  q: "Do you work with travel agents?",
+                  a: "We do. Ask for our trade rates and we will connect you with our partnerships team.",
+                },
               ]}
             />
           </div>
@@ -243,20 +341,25 @@ function Field({
   type = "text",
   placeholder,
   required,
+  defaultValue,
 }: {
   label: string;
   name: string;
   type?: string;
   placeholder?: string;
   required?: boolean;
+  defaultValue?: string | undefined;
 }) {
   return (
     <label className="block">
-      <span className="text-xs font-bold uppercase tracking-[0.16em] text-muted-foreground">{label}</span>
+      <span className="text-xs font-bold uppercase tracking-[0.16em] text-muted-foreground">
+        {label}
+      </span>
       <input
         type={type}
         name={name}
         required={required}
+        defaultValue={defaultValue}
         placeholder={placeholder}
         className="mt-2 w-full rounded-2xl border border-border bg-background px-4 py-3.5 text-sm outline-none placeholder:text-muted-foreground focus:border-gold"
       />

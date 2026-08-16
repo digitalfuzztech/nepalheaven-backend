@@ -1,16 +1,17 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { LoaderCircle } from "lucide-react";
-import { useMemo, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { AuthShell } from "@/components/AuthShell";
 import { countryOptions } from "@/lib/countries";
 import { registerCustomerFn } from "@/lib/registration.functions";
 
 export const Route = createFileRoute("/registration")({
+  loader: () => countryOptions(),
   component: RegistrationPage,
 });
 
 function RegistrationPage() {
-  const nationalities = useMemo(() => countryOptions(), []);
+  const nationalities = Route.useLoaderData();
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -41,21 +42,45 @@ function RegistrationPage() {
       );
     if (form.password !== form.confirm)
       return setError("Passwords do not match.");
-    const data = new FormData();
-    for (const key of [
-      "name",
-      "email",
-      "phone",
-      "nationality",
-      "dateOfBirth",
-      "password",
-    ] as const)
-      data.set(key, form[key]);
     setBusy(true);
     try {
-      const result = await registerCustomerFn({ data });
+      const result = await registerCustomerFn({
+        data: {
+          name: form.name,
+          email: form.email,
+          phone: form.phone,
+          nationality: form.nationality,
+          dateOfBirth: form.dateOfBirth,
+          password: form.password,
+        },
+      });
       if (!result.ok) return setError(result.message);
-      window.location.assign("/account");
+      window.sessionStorage.setItem(
+        "nepalheaven_verification_email",
+        form.email.trim().toLowerCase(),
+      );
+      const verificationUrl = new URL(
+        result.verificationPath,
+        window.location.origin,
+      );
+      const [local, domain] = form.email.trim().toLowerCase().split("@");
+      verificationUrl.searchParams.set(
+        "address",
+        `${local?.slice(0, 2) || ""}***@${domain || ""}`,
+      );
+      verificationUrl.searchParams.set(
+        "notice",
+        result.existingPending
+          ? result.sent
+            ? "pending_registration_sent"
+            : "pending_registration_cooldown"
+          : result.sent
+            ? "sent"
+            : "send_failed",
+      );
+      window.location.assign(
+        `${verificationUrl.pathname}${verificationUrl.search}`,
+      );
     } catch (registrationError) {
       console.error(registrationError);
       setError("We couldn't create your account right now. Please try again.");

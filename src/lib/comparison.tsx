@@ -6,6 +6,7 @@ const KEY = "nepalheaven_compare_v1";
 type ComparisonContextValue = {
   items: string[];
   add: (slug: string) => void;
+  addMany: (slugs: string[]) => void;
   remove: (slug: string) => void;
   toggle: (slug: string) => void;
   clear: () => void;
@@ -16,21 +17,28 @@ const ComparisonContext = createContext<ComparisonContextValue | null>(null);
 
 export function ComparisonProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<string[]>([]);
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(KEY);
-      if (raw) setItems(JSON.parse(raw) as string[]);
+      if (raw) {
+        const parsed: unknown = JSON.parse(raw);
+        if (Array.isArray(parsed)) setItems([...new Set(parsed.filter((item): item is string => typeof item === "string" && item.length > 0))].slice(0, 3));
+      }
     } catch {}
+    setHydrated(true);
   }, []);
 
   useEffect(() => {
+    if (!hydrated) return;
     window.localStorage.setItem(KEY, JSON.stringify(items));
-  }, [items]);
+  }, [hydrated, items]);
 
   const value = useMemo(() => ({
     items,
     add: (slug: string) => setItems((current) => current.includes(slug) || current.length >= 3 ? current : [...current, slug]),
+    addMany: (slugs: string[]) => setItems((current) => [...new Set([...slugs.filter(Boolean), ...current])].slice(0, 3)),
     remove: (slug: string) => setItems((current) => current.filter((x) => x !== slug)),
     toggle: (slug: string) => setItems((current) => current.includes(slug) ? current.filter((x) => x !== slug) : current.length < 3 ? [...current, slug] : current),
     clear: () => setItems([]),

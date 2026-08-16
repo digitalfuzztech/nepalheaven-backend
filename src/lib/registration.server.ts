@@ -1,13 +1,10 @@
-import { createHash, randomBytes, randomUUID, scryptSync } from "node:crypto";
+import { randomBytes, randomUUID, scryptSync } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { setResponseHeader } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { db } from "@/db";
-import { sessions } from "@/db/schema/sessions";
 import { users } from "@/db/schema/users";
 import { countryName, isCountryCode } from "@/lib/countries";
-
-const SESSION_MAX_AGE = 7 * 24 * 60 * 60;
+import { issueEmailVerification } from "@/lib/email-verification.server";
 
 const registrationSchema = z.object({
   name: z.string().trim().min(2).max(120),
@@ -51,8 +48,22 @@ const registrationSchema = z.object({
 
 export class PublicRegistrationError extends Error {}
 
-function text(formData: FormData, key: string) {
-  const value = formData.get(key);
+type RegistrationInput =
+  | FormData
+  | {
+      name: string;
+      email: string;
+      phone: string;
+      nationality: string;
+      dateOfBirth: string;
+      password: string;
+    };
+
+function text(input: RegistrationInput, key: string) {
+  const value =
+    input instanceof FormData
+      ? input.get(key)
+      : input[key as keyof Exclude<RegistrationInput, FormData>];
   return typeof value === "string" ? value : "";
 }
 
@@ -62,19 +73,7 @@ function hashPassword(password: string) {
   return `scrypt$${salt}$${derived.toString("hex")}`;
 }
 
-function hashToken(token: string) {
-  return createHash("sha256").update(token).digest("hex");
-}
-
-function setSessionCookie(token: string) {
-  const secure = process.env["NODE_ENV"] === "production" ? "; Secure" : "";
-  setResponseHeader(
-    "Set-Cookie",
-    `nepalheaven_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_MAX_AGE}${secure}`,
-  );
-}
-
-export async function registerCustomer(formData: FormData) {
+export async function registerCustomer(formData: RegistrationInput) {
   if (!db) throw new Error("Database is not configured.");
   const parsed = registrationSchema.safeParse({
     name: text(formData, "name"),
@@ -89,20 +88,36 @@ export async function registerCustomer(formData: FormData) {
       parsed.error.issues[0]?.message ?? "Review your registration details.",
     );
   const [existing] = await db
-    .select({ id: users.id })
+    .select({
+      id: users.id,
+      role: users.role,
+      emailVerifiedAt: users.emailVerifiedAt,
+    })
     .from(users)
     .where(eq(users.email, parsed.data.email))
     .limit(1);
-  if (existing)
+  if (existing) {
+    if (existing.role === "customer" && !existing.emailVerifiedAt) {
+      const challenge = await issueEmailVerification(existing.id);
+      return {
+        pendingVerification: true as const,
+        existingPending: true as const,
+        verificationPath: challenge.verificationPath,
+        sent: challenge.sent,
+        message: challenge.sent
+          ? "Your pending registration is ready for email verification."
+          : "Your account is awaiting verification. Please use the resend option if needed.",
+      };
+    }
     throw new PublicRegistrationError(
-      "An account with this email already exists.",
+      "An account with this email already exists. Please sign in instead.",
     );
+  }
 
   const country = countryName(parsed.data.nationality);
   if (!country)
     throw new PublicRegistrationError("Select a valid nationality.");
 
-  const sessionToken = randomBytes(32).toString("base64url");
   const result = await db.transaction(async (transaction) => {
     const userId = randomUUID();
     await transaction.insert(users).values({
@@ -122,24 +137,18 @@ export async function registerCustomer(formData: FormData) {
       .where(eq(users.id, userId))
       .limit(1);
     if (!created) throw new Error("User insert could not be read back.");
-    await transaction.insert(sessions).values({
-      tokenHash: hashToken(sessionToken),
-      userId: created.id,
-      expiresAt: new Date(Date.now() + SESSION_MAX_AGE * 1000),
-    });
     return {
-      user: {
-        id: created.id,
-        name: created.name,
-        email: created.email,
-        role: created.role,
-        phone: created.phone ?? undefined,
-        country: created.country ?? undefined,
-        nationality: created.nationality ?? undefined,
-        dateOfBirth: created.dateOfBirth ?? undefined,
-      },
+      userId: created.id,
     };
   });
-  setSessionCookie(sessionToken);
-  return result;
+  const challenge = await issueEmailVerification(result.userId);
+  return {
+    pendingVerification: true as const,
+    existingPending: false as const,
+    verificationPath: challenge.verificationPath,
+    sent: challenge.sent,
+    message: challenge.sent
+      ? "Check your email for the six-digit verification code."
+      : "Your account is pending verification. You can request another email shortly.",
+  };
 }

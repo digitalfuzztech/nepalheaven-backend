@@ -69,28 +69,39 @@ export function calculateCommercialAmounts(
   };
 }
 
+export type CancellationFeeType = "fixed" | "percentage";
+
 export function calculateCancellationFee(
   grandTotalCents: number,
-  cancellationPercentage: string | number,
+  feeType: CancellationFeeType,
+  feeValue: string | number,
 ) {
-  return roundedPercentage(
-    grandTotalCents,
-    percentageToBasisPoints(cancellationPercentage),
-  );
+  if (!Number.isSafeInteger(grandTotalCents) || grandTotalCents < 0)
+    throw new Error("Invalid booking grand total.");
+  return feeType === "fixed"
+    ? moneyToCents(feeValue)
+    : roundedPercentage(grandTotalCents, percentageToBasisPoints(feeValue));
 }
 
 export function calculateRefund(
-  successfullyPaidCents: number,
-  cancellationFeeCents: number,
+  netPaidCents: number,
+  calculatedCancellationFeeCents: number,
 ) {
   if (
-    !Number.isSafeInteger(successfullyPaidCents) ||
-    successfullyPaidCents < 0 ||
-    !Number.isSafeInteger(cancellationFeeCents) ||
-    cancellationFeeCents < 0
+    !Number.isSafeInteger(netPaidCents) ||
+    netPaidCents < 0 ||
+    !Number.isSafeInteger(calculatedCancellationFeeCents) ||
+    calculatedCancellationFeeCents < 0
   )
     throw new Error("Invalid cancellation amounts.");
-  return Math.max(successfullyPaidCents - cancellationFeeCents, 0);
+  const cancellationFeeChargedCents = Math.min(
+    calculatedCancellationFeeCents,
+    netPaidCents,
+  );
+  return {
+    cancellationFeeChargedCents,
+    refundDueCents: Math.max(netPaidCents - cancellationFeeChargedCents, 0),
+  };
 }
 
 export function calculateBalanceDueDate(

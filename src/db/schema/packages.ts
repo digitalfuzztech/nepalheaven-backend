@@ -19,6 +19,8 @@ export const packageDifficultyValues = [
   "extreme",
 ] as const;
 
+export const cancellationFeeTypeValues = ["fixed", "percentage"] as const;
+
 export const packages = mysqlTable("packages", {
   id: uuidPrimaryColumn("id").primaryKey(),
   destinationId: uuidColumn("destination_id").references(
@@ -43,6 +45,15 @@ export const packages = mysqlTable("packages", {
     precision: 5,
     scale: 2,
   }),
+  cancellationFeeType: mysqlEnum(
+    "cancellation_fee_type",
+    cancellationFeeTypeValues,
+  ),
+  cancellationFeeValue: decimal("cancellation_fee_value", {
+    precision: 12,
+    scale: 2,
+  }),
+  cancellationPolicyText: text("cancellation_policy_text"),
   rating: decimal("rating", { precision: 3, scale: 2 }),
   reviewCount: int("review_count").default(0).notNull(),
   heroImage: text("hero_image"),

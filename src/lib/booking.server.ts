@@ -15,7 +15,6 @@ import { sessions } from "@/db/schema/sessions";
 import { users } from "@/db/schema/users";
 import {
   calculateCancellationFee,
-  calculateRefund,
   calculateCommercialAmounts,
   centsToMoney,
   moneyToCents,
@@ -113,7 +112,11 @@ export async function requireAuthenticatedCustomer(transaction: Transaction) {
       "Please sign in with a customer account.",
     );
   const [row] = await transaction
-    .select({ userId: users.id, role: users.role })
+    .select({
+      userId: users.id,
+      role: users.role,
+      emailVerifiedAt: users.emailVerifiedAt,
+    })
     .from(sessions)
     .innerJoin(users, eq(sessions.userId, users.id))
     .where(
@@ -129,7 +132,7 @@ export async function requireAuthenticatedCustomer(transaction: Transaction) {
       "AUTH_REQUIRED",
       "Your session has expired. Please sign in again.",
     );
-  if (row.role !== "customer")
+  if (row.role !== "customer" || !row.emailVerifiedAt)
     throw new PublicBookingError(
       "CUSTOMER_REQUIRED",
       "A customer account is required to access checkout and bookings.",
@@ -273,6 +276,9 @@ export async function createCheckoutIntent(input: CreateCheckoutIntentInput) {
           id: packages.id,
           slug: packages.slug,
           title: packages.title,
+          cancellationFeeType: packages.cancellationFeeType,
+          cancellationFeeValue: packages.cancellationFeeValue,
+          cancellationPolicyText: packages.cancellationPolicyText,
           cancellationFeePercentage: packages.cancellationFeePercentage,
           destinationCancellationFeePercentage:
             destinations.cancellationFeePercentage,
@@ -315,21 +321,35 @@ export async function createCheckoutIntent(input: CreateCheckoutIntentInput) {
       );
       const traveller = splitTravellerName(customer.name);
       const cancellationPolicy =
-        packageRow.cancellationFeePercentage !== null
+        packageRow.cancellationFeeType !== null &&
+        packageRow.cancellationFeeValue !== null
           ? {
-              percentage: packageRow.cancellationFeePercentage,
+              type: packageRow.cancellationFeeType,
+              value: packageRow.cancellationFeeValue,
+              text: packageRow.cancellationPolicyText,
               source: "package",
             }
-          : packageRow.destinationCancellationFeePercentage !== null
+          : packageRow.cancellationFeePercentage !== null
             ? {
-                percentage: packageRow.destinationCancellationFeePercentage,
-                source: "destination",
+                type: "percentage" as const,
+                value: packageRow.cancellationFeePercentage,
+                text: packageRow.cancellationPolicyText,
+                source: "package",
               }
-            : {
-                percentage:
-                  configuration.defaultCancellationFeePercentage.toFixed(2),
-                source: "global",
-              };
+            : packageRow.destinationCancellationFeePercentage !== null
+              ? {
+                  type: "percentage" as const,
+                  value: packageRow.destinationCancellationFeePercentage,
+                  text: null,
+                  source: "destination",
+                }
+              : {
+                  type: "percentage" as const,
+                  value:
+                    configuration.defaultCancellationFeePercentage.toFixed(2),
+                  text: null,
+                  source: "global",
+                };
       const intentId = randomUUID();
       await transaction.insert(bookingIntents).values({
         id: intentId,
@@ -356,7 +376,13 @@ export async function createCheckoutIntent(input: CreateCheckoutIntentInput) {
           configuration.minimumDepositPercentage.toFixed(2),
         minimumDepositAmount: centsToMoney(amounts.minimumDepositCents),
         balanceDueDaysSnapshot: configuration.balanceDueDaysBeforeDeparture,
-        cancellationFeePercentageSnapshot: cancellationPolicy.percentage,
+        cancellationFeePercentageSnapshot:
+          cancellationPolicy.type === "percentage"
+            ? cancellationPolicy.value
+            : "0.00",
+        cancellationFeeTypeSnapshot: cancellationPolicy.type,
+        cancellationFeeValueSnapshot: cancellationPolicy.value,
+        cancellationPolicyTextSnapshot: cancellationPolicy.text,
         cancellationPolicySourceSnapshot: cancellationPolicy.source,
         stagedDocumentType: storedDocument ? input.documentType : null,
         stagedDocumentStorageKey: storedDocument?.storageKey ?? null,
@@ -561,9 +587,15 @@ const publicBookingSelection = {
   remainingBalanceSnapshot: bookings.remainingBalanceSnapshot,
   balanceDueDate: bookings.balanceDueDate,
   cancellationFeePercentageSnapshot: bookings.cancellationFeePercentageSnapshot,
+  cancellationFeeTypeSnapshot: bookings.cancellationFeeTypeSnapshot,
+  cancellationFeeValueSnapshot: bookings.cancellationFeeValueSnapshot,
+  cancellationPolicyTextSnapshot: bookings.cancellationPolicyTextSnapshot,
   cancellationPolicySourceSnapshot: bookings.cancellationPolicySourceSnapshot,
   cancellationFeeAmount: bookings.cancellationFeeAmount,
   refundAmount: bookings.refundAmount,
+  amountPaidAtCancellationSnapshot: bookings.amountPaidAtCancellationSnapshot,
+  previouslyRefundedAmountSnapshot: bookings.previouslyRefundedAmountSnapshot,
+  refundProcessingDeadline: bookings.refundProcessingDeadline,
   cancelledAt: bookings.cancelledAt,
   cancellationReason: bookings.cancellationReason,
   currency: bookings.currency,
@@ -613,9 +645,15 @@ type PublicBookingRow = {
   remainingBalanceSnapshot: string | null;
   balanceDueDate: string | null;
   cancellationFeePercentageSnapshot: string | null;
+  cancellationFeeTypeSnapshot: "fixed" | "percentage";
+  cancellationFeeValueSnapshot: string;
+  cancellationPolicyTextSnapshot: string | null;
   cancellationPolicySourceSnapshot: string | null;
   cancellationFeeAmount: string | null;
   refundAmount: string | null;
+  amountPaidAtCancellationSnapshot: string | null;
+  previouslyRefundedAmountSnapshot: string | null;
+  refundProcessingDeadline: Date | null;
   cancelledAt: Date | null;
   cancellationReason: string | null;
   currency: string;
@@ -641,11 +679,14 @@ function publicBooking(
       refundStatus = failedRefund ? "refund_failed" : "processed_for_refund";
     else
       refundStatus =
-        summary.amountPaidCents === 0 ? "refunded" : "partially_refunded";
+        summary.refundedCents >= requestedRefundCents
+          ? "refunded"
+          : "partially_refunded";
   }
   const cancellationFeeCents = calculateCancellationFee(
     grandTotalCents,
-    row.cancellationFeePercentageSnapshot ?? "0",
+    row.cancellationFeeTypeSnapshot,
+    row.cancellationFeeValueSnapshot,
   );
   return {
     reference: row.reference,
@@ -686,10 +727,19 @@ function publicBooking(
     cancellationFeePercentage: Number(
       row.cancellationFeePercentageSnapshot ?? 0,
     ),
+    cancellationFeeType: row.cancellationFeeTypeSnapshot,
+    cancellationFeeValue: Number(row.cancellationFeeValueSnapshot),
+    cancellationPolicyText: row.cancellationPolicyTextSnapshot,
     estimatedCancellationFee: Number(centsToMoney(cancellationFeeCents)),
     cancellationPolicySource: row.cancellationPolicySourceSnapshot,
     cancellationFeeAmount: Number(row.cancellationFeeAmount ?? 0),
     refundAmount: Number(row.refundAmount ?? 0),
+    amountPaidAtCancellation: Number(row.amountPaidAtCancellationSnapshot ?? 0),
+    previouslyRefundedAtCancellation: Number(
+      row.previouslyRefundedAmountSnapshot ?? 0,
+    ),
+    refundProcessingDeadline:
+      row.refundProcessingDeadline?.toISOString() ?? null,
     cancelledDate: row.cancelledAt?.toISOString() ?? null,
     cancellationReason: row.cancellationReason,
     currency: row.currency,
@@ -870,6 +920,196 @@ export async function getCustomerBookingSummary(reference: string) {
   };
 }
 
+export async function getAdminConfirmedBooking(reference: string) {
+  return requireDb().transaction(async (transaction) => {
+    await requireAuthenticatedAdmin(transaction);
+    const [row] = await transaction
+      .select({
+        id: bookings.id,
+        reference: bookings.bookingReference,
+        status: bookings.status,
+        confirmedAt: bookings.createdAt,
+        userId: bookings.userId,
+        customerName: users.name,
+        customerEmail: users.email,
+        customerPhone: users.phone,
+        customerCountry: users.country,
+        customerNationality: users.nationality,
+        packageName: packages.title,
+        tierName: packageTiers.name,
+        destinationName: destinations.name,
+        departureDate: bookings.departureDate,
+        travellers: bookings.travellers,
+        paymentOption: bookings.initialPaymentOption,
+        grandTotal: bookings.total,
+        amountPaid: bookings.amountInitiallyPaid,
+        remainingBalance: bookings.remainingBalanceSnapshot,
+        currency: bookings.currency,
+      })
+      .from(bookings)
+      .innerJoin(users, eq(users.id, bookings.userId))
+      .innerJoin(packages, eq(packages.id, bookings.packageId))
+      .leftJoin(packageTiers, eq(packageTiers.id, bookings.packageTierId))
+      .leftJoin(destinations, eq(destinations.id, packages.destinationId))
+      .where(
+        and(
+          eq(bookings.bookingReference, reference),
+          eq(bookings.status, "confirmed"),
+        ),
+      )
+      .limit(1);
+    if (!row)
+      throw new PublicBookingError(
+        "BOOKING_NOT_FOUND",
+        "Confirmed booking not found.",
+      );
+    const [[traveller], [payment]] = await Promise.all([
+      transaction
+        .select()
+        .from(bookingTravellers)
+        .where(eq(bookingTravellers.bookingId, row.id))
+        .limit(1),
+      transaction
+        .select()
+        .from(payments)
+        .where(and(eq(payments.bookingId, row.id), eq(payments.status, "paid")))
+        .orderBy(asc(payments.createdAt))
+        .limit(1),
+    ]);
+    if (!payment)
+      throw new PublicBookingError(
+        "BOOKING_NOT_FOUND",
+        "Confirmed booking payment not found.",
+      );
+    const {
+      getBookingPaymentStatusLabel,
+      getBookingPaymentTypeLabel,
+      getPaymentMethodLabel,
+    } = await import("@/lib/booking-email.server");
+    return {
+      ...row,
+      customerName: traveller
+        ? `${traveller.firstName} ${traveller.lastName}`.trim()
+        : row.customerName,
+      customerEmail: traveller?.email || row.customerEmail,
+      customerPhone: traveller?.phone || row.customerPhone,
+      customerNationality:
+        traveller?.nationality ||
+        row.customerNationality ||
+        row.customerCountry,
+      confirmedAt: (payment.paidAt || row.confirmedAt).toISOString(),
+      departureDate: row.departureDate ? nepalDate(row.departureDate) : null,
+      paymentType: getBookingPaymentTypeLabel(
+        row.paymentOption,
+        payment.purpose,
+      ),
+      paymentMethod: getPaymentMethodLabel(payment.provider),
+      paymentStatus: getBookingPaymentStatusLabel(row.remainingBalance),
+      paymentReference: payment.providerTransactionId,
+    };
+  });
+}
+
+export async function getAdminCancelledBooking(reference: string) {
+  return requireDb().transaction(async (transaction) => {
+    await requireAuthenticatedAdmin(transaction);
+    const [row] = await transaction
+      .select({
+        id: bookings.id,
+        reference: bookings.bookingReference,
+        cancelledAt: bookings.cancelledAt,
+        cancellationReason: bookings.cancellationReason,
+        customerName: users.name,
+        customerEmail: users.email,
+        customerPhone: users.phone,
+        customerCountry: users.country,
+        customerNationality: users.nationality,
+        packageName: packages.title,
+        tierName: packageTiers.name,
+        destinationName: destinations.name,
+        departureDate: bookings.departureDate,
+        travellers: bookings.travellers,
+        grandTotal: bookings.total,
+        amountPaid: bookings.amountPaidAtCancellationSnapshot,
+        previouslyRefunded: bookings.previouslyRefundedAmountSnapshot,
+        cancellationFeeType: bookings.cancellationFeeTypeSnapshot,
+        cancellationFeeValue: bookings.cancellationFeeValueSnapshot,
+        cancellationFeeAmount: bookings.cancellationFeeAmount,
+        refundDue: bookings.refundAmount,
+        refundDeadline: bookings.refundProcessingDeadline,
+        currency: bookings.currency,
+      })
+      .from(bookings)
+      .innerJoin(users, eq(users.id, bookings.userId))
+      .innerJoin(packages, eq(packages.id, bookings.packageId))
+      .leftJoin(packageTiers, eq(packageTiers.id, bookings.packageTierId))
+      .leftJoin(destinations, eq(destinations.id, packages.destinationId))
+      .where(
+        and(
+          eq(bookings.bookingReference, reference),
+          eq(bookings.status, "cancelled"),
+        ),
+      )
+      .limit(1);
+    if (!row?.cancelledAt)
+      throw new PublicBookingError(
+        "BOOKING_NOT_FOUND",
+        "Cancelled booking not found.",
+      );
+    const [[traveller], paymentRows] = await Promise.all([
+      transaction
+        .select()
+        .from(bookingTravellers)
+        .where(eq(bookingTravellers.bookingId, row.id))
+        .orderBy(asc(bookingTravellers.id))
+        .limit(1),
+      transaction
+        .select()
+        .from(payments)
+        .where(eq(payments.bookingId, row.id))
+        .orderBy(asc(payments.createdAt)),
+    ]);
+    const refundDueCents = moneyToCents(row.refundDue ?? "0");
+    const summary = paymentSummary(
+      paymentRows,
+      moneyToCents(row.grandTotal ?? "0"),
+    );
+    const hasFailedRefund = paymentRows.some(
+      (payment) => payment.purpose === "refund" && payment.status === "failed",
+    );
+    const refundStatus: CustomerRefundState =
+      refundDueCents === 0
+        ? "no_refund_due"
+        : hasFailedRefund && summary.refundedCents === 0
+          ? "refund_failed"
+          : summary.refundedCents >= refundDueCents
+            ? "refunded"
+            : summary.refundedCents > 0
+              ? "partially_refunded"
+              : "processed_for_refund";
+    return {
+      ...row,
+      customerName: traveller
+        ? `${traveller.firstName} ${traveller.lastName}`.trim()
+        : row.customerName,
+      customerEmail: traveller?.email || row.customerEmail,
+      customerPhone: traveller?.phone || row.customerPhone,
+      customerNationality:
+        traveller?.nationality ||
+        row.customerNationality ||
+        row.customerCountry,
+      departureDate: row.departureDate ? nepalDate(row.departureDate) : null,
+      cancelledAt: row.cancelledAt.toISOString(),
+      refundDeadline: row.refundDeadline?.toISOString() ?? null,
+      refundStatus,
+      paymentReferences: paymentRows
+        .filter((payment) => payment.purpose !== "refund")
+        .map((payment) => payment.providerTransactionId)
+        .filter((value): value is string => Boolean(value)),
+    };
+  });
+}
+
 export async function getMyConfirmedBookingForPackage(packageSlug: string) {
   try {
     const customerBookings = await getMyBookings();
@@ -894,122 +1134,38 @@ export async function getMyConfirmedBookingForPackage(packageSlug: string) {
   }
 }
 
-function nepalToday() {
-  return nepalDate(new Date());
-}
-
-async function cancellationContext(
-  transaction: Transaction,
-  reference: string,
-  userId: string,
-  lock: boolean,
-) {
-  const query = transaction
-    .select({
-      id: bookings.id,
-      status: bookings.status,
-      departureDate: bookings.departureDate,
-      total: bookings.total,
-      currency: bookings.currency,
-      percentage: bookings.cancellationFeePercentageSnapshot,
-    })
-    .from(bookings)
-    .where(
-      and(
-        eq(bookings.bookingReference, reference),
-        eq(bookings.userId, userId),
-      ),
-    )
-    .limit(1);
-  const [booking] = lock ? await query.for("update") : await query;
-  if (!booking)
-    throw new PublicBookingError(
-      "BOOKING_NOT_FOUND",
-      "This booking could not be found for your account.",
-    );
-  if (booking.status !== "confirmed")
-    throw new PublicBookingError(
-      "CANCELLATION_NOT_ALLOWED",
-      "Only a confirmed booking can be cancelled.",
-    );
-  const departure = booking.departureDate ?? null;
-  if (!departure || departure < nepalToday())
-    throw new PublicBookingError(
-      "CANCELLATION_NOT_ALLOWED",
-      "Self-service cancellation is unavailable after departure.",
-    );
-  const rows = await transaction
-    .select()
-    .from(payments)
-    .where(eq(payments.bookingId, booking.id));
-  const summary = paymentSummary(rows, moneyToCents(booking.total ?? "0"));
-  const feeCents = calculateCancellationFee(
-    moneyToCents(booking.total ?? "0"),
-    booking.percentage ?? "0",
-  );
-  const refundCents = calculateRefund(summary.successfulPaidCents, feeCents);
-  return { booking, rows, summary, feeCents, refundCents };
-}
-
-function cancellationPublic(
-  context: Awaited<ReturnType<typeof cancellationContext>>,
-) {
-  const totalCents = moneyToCents(context.booking.total ?? "0");
-  return {
-    grandTotal: Number(context.booking.total ?? 0),
-    amountPaid: Number(centsToMoney(context.summary.successfulPaidCents)),
-    cancellationFeePercentage: Number(context.booking.percentage ?? 0),
-    cancellationFeeAmount: Number(centsToMoney(context.feeCents)),
-    refundAmount: Number(centsToMoney(context.refundCents)),
-    outstandingBalanceVoided: Number(
-      centsToMoney(
-        Math.max(totalCents - context.summary.successfulPaidCents, 0),
-      ),
-    ),
-    currency: context.booking.currency,
-  };
-}
-
 export async function getMyCancellationPreview(reference: string) {
-  return requireDb().transaction(async (transaction) => {
-    const userId = await requireAuthenticatedCustomer(transaction);
-    return cancellationPublic(
-      await cancellationContext(transaction, reference, userId, false),
-    );
-  });
+  const userId = await requireDb().transaction((transaction) =>
+    requireAuthenticatedCustomer(transaction),
+  );
+  try {
+    const { getCancellationPreviewOwnedByCustomer } =
+      await import("@/lib/booking-cancellation.server");
+    return await getCancellationPreviewOwnedByCustomer(reference, userId);
+  } catch (error) {
+    const { BookingCancellationError } =
+      await import("@/lib/booking-cancellation.server");
+    if (error instanceof BookingCancellationError)
+      throw new PublicBookingError(error.code, error.message);
+    throw error;
+  }
 }
 
 export async function cancelMyBooking(reference: string, reason?: string) {
-  return requireDb().transaction(async (transaction) => {
-    const userId = await requireAuthenticatedCustomer(transaction);
-    const context = await cancellationContext(
-      transaction,
-      reference,
-      userId,
-      true,
-    );
-    const now = new Date();
-    await transaction
-      .update(bookings)
-      .set({
-        status: "cancelled",
-        cancellationFeeAmount: centsToMoney(context.feeCents),
-        refundAmount: centsToMoney(context.refundCents),
-        cancelledAt: now,
-        cancellationReason: reason?.trim() || null,
-        updatedAt: now,
-      })
-      .where(eq(bookings.id, context.booking.id));
-    return {
-      ...cancellationPublic(context),
-      status: "cancelled" as const,
-      cancelledAt: now.toISOString(),
-      refundStatus:
-        context.refundCents > 0
-          ? ("processed_for_refund" as const)
-          : ("no_refund_due" as const),
-    };
-  });
+  const userId = await requireDb().transaction((transaction) =>
+    requireAuthenticatedCustomer(transaction),
+  );
+  try {
+    const { cancelBookingOwnedByCustomer } =
+      await import("@/lib/booking-cancellation.server");
+    return await cancelBookingOwnedByCustomer(reference, userId, reason);
+  } catch (error) {
+    const { BookingCancellationError } =
+      await import("@/lib/booking-cancellation.server");
+    if (error instanceof BookingCancellationError)
+      throw new PublicBookingError(error.code, error.message);
+    throw error;
+  }
 }
 
 export async function completeDevelopmentMockRefund(reference: string) {
@@ -1043,7 +1199,7 @@ export async function completeDevelopmentMockRefund(reference: string) {
         status:
           requestedCents === 0
             ? ("no_refund_due" as const)
-            : summary.amountPaidCents === 0
+            : summary.refundedCents >= requestedCents
               ? ("refunded" as const)
               : ("partially_refunded" as const),
         refundedAmount: Number(centsToMoney(summary.refundedCents)),
@@ -1070,7 +1226,7 @@ export async function completeDevelopmentMockRefund(reference: string) {
     const refundedCents = summary.refundedCents + remainingCents;
     return {
       status:
-        refundedCents >= summary.successfulPaidCents
+        refundedCents >= requestedCents
           ? ("refunded" as const)
           : ("partially_refunded" as const),
       refundedAmount: Number(centsToMoney(refundedCents)),
